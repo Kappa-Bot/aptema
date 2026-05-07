@@ -13,8 +13,10 @@ public sealed class SettingsViewModel : ObservableObject
     private bool _enableDdcCi;
     private bool _enableContentBrightnessAnalysis;
     private bool _gamingVideoProtection;
+    private bool _reduceWorkOnBattery;
     private int _transitionSpeedSeconds;
     private string _appOverridesText = "";
+    private string _monitorPreferencesText = "";
 
     public SettingsViewModel(UserSettings settings, bool startWithWindows)
     {
@@ -98,6 +100,12 @@ public sealed class SettingsViewModel : ObservableObject
         set => SetProperty(ref _gamingVideoProtection, value);
     }
 
+    public bool ReduceWorkOnBattery
+    {
+        get => _reduceWorkOnBattery;
+        set => SetProperty(ref _reduceWorkOnBattery, value);
+    }
+
     public int TransitionSpeedSeconds
     {
         get => _transitionSpeedSeconds;
@@ -108,6 +116,12 @@ public sealed class SettingsViewModel : ObservableObject
     {
         get => _appOverridesText;
         set => SetProperty(ref _appOverridesText, value);
+    }
+
+    public string MonitorPreferencesText
+    {
+        get => _monitorPreferencesText;
+        set => SetProperty(ref _monitorPreferencesText, value);
     }
 
     public UserSettings ToSettings(UserSettings current)
@@ -127,8 +141,10 @@ public sealed class SettingsViewModel : ObservableObject
             EnableDdcCi = EnableDdcCi,
             EnableContentBrightnessAnalysis = EnableContentBrightnessAnalysis,
             GamingVideoProtection = GamingVideoProtection,
+            ReduceWorkOnBattery = ReduceWorkOnBattery,
             TransitionSpeed = TimeSpan.FromSeconds(Math.Clamp(TransitionSpeedSeconds, 30, 240)),
-            AppOverrides = AppOverrideTextCodec.Parse(AppOverridesText)
+            AppOverrides = AppOverrideTextCodec.Parse(AppOverridesText),
+            MonitorPreferences = MonitorPreferenceTextCodec.Parse(MonitorPreferencesText)
         };
     }
 
@@ -143,8 +159,10 @@ public sealed class SettingsViewModel : ObservableObject
         EnableDdcCi = settings.EnableDdcCi;
         EnableContentBrightnessAnalysis = settings.EnableContentBrightnessAnalysis;
         GamingVideoProtection = settings.GamingVideoProtection;
+        ReduceWorkOnBattery = settings.ReduceWorkOnBattery;
         TransitionSpeedSeconds = (int)Math.Round(settings.TransitionSpeed.TotalSeconds);
         AppOverridesText = AppOverrideTextCodec.Format(settings.AppOverrides);
+        MonitorPreferencesText = MonitorPreferenceTextCodec.Format(settings.MonitorPreferences);
     }
 
     private void Reset()

@@ -1,7 +1,8 @@
 param(
-    [string]$Version = "0.1.0",
+    [string]$Version = "0.2.0",
     [string]$Configuration = "Release",
-    [string]$Runtime = "win-x64"
+    [string]$Runtime = "win-x64",
+    [switch]$BuildInstaller
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,3 +26,20 @@ dotnet publish $project -c $Configuration -r $Runtime --self-contained true /p:P
 
 Compress-Archive -Path (Join-Path $publishDir "*") -DestinationPath $zipPath -CompressionLevel Optimal
 Write-Host $zipPath
+
+if ($BuildInstaller) {
+    $iscc = Get-Command "iscc.exe" -ErrorAction SilentlyContinue
+    if ($null -eq $iscc) {
+        $defaultInno = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+        if (Test-Path -LiteralPath $defaultInno) {
+            $iscc = [pscustomobject]@{ Source = $defaultInno }
+        }
+    }
+
+    if ($null -eq $iscc) {
+        throw "Inno Setup compiler not found. Install Inno Setup 6 or run without -BuildInstaller."
+    }
+
+    $installerScript = Join-Path $repoRoot "installer\LightPilot.iss"
+    & $iscc.Source "/DMyAppVersion=$Version" "/DMyRuntime=$Runtime" $installerScript
+}

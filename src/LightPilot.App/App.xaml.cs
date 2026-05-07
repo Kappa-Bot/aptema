@@ -1,6 +1,7 @@
 using System.Windows;
 using LightPilot.App.Services;
 using LightPilot.App.ViewModels;
+using LightPilot.Core;
 using LightPilot.Infrastructure;
 
 namespace LightPilot.App;
@@ -29,6 +30,7 @@ public partial class App : System.Windows.Application
 
         _overlayController = new WpfOverlayController();
         var settingsStore = new JsonSettingsStore();
+        var initialSettings = settingsStore.LoadAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
         var noHardware = e.Args.Any(arg => string.Equals(arg, "--no-hardware", StringComparison.OrdinalIgnoreCase));
         var background = e.Args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
         IBrightnessController brightnessController = noHardware
@@ -43,7 +45,9 @@ public partial class App : System.Windows.Application
             new MonitorEnumerator(),
             new ForegroundWindowDetector(),
             new ContentLuminanceSampler(),
-            brightnessController)
+            brightnessController,
+            new SystemPowerStatusProvider(),
+            initialSettings)
         {
             StartWithWindows = _startupRegistration.IsEnabled()
         };
@@ -57,6 +61,11 @@ public partial class App : System.Windows.Application
         _singleInstanceGuard?.StartActivationListener(() => Dispatcher.Invoke(ShowMainWindow));
         if (!background)
         {
+            if (!initialSettings.HasCompletedOnboarding)
+            {
+                ShowOnboardingWindow(initialSettings);
+            }
+
             ShowMainWindow();
         }
     }
@@ -110,6 +119,20 @@ public partial class App : System.Windows.Application
         }
 
         _mainWindow.Activate();
+    }
+
+    private void ShowOnboardingWindow(UserSettings initialSettings)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var onboarding = new OnboardingWindow();
+        if (onboarding.ShowDialog() == true)
+        {
+            _viewModel.ApplySettings(initialSettings with { HasCompletedOnboarding = true }, _viewModel.StartWithWindows);
+        }
     }
 
     private void ExitApplication()

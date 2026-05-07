@@ -1,0 +1,42 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build
+        run: dotnet build LightPilot.sln
+      - name: Test
+        run: dotnet test LightPilot.sln --no-build
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = "${env:GITHUB_REF_NAME}".TrimStart("v")
+          .\scripts\package-release.ps1 -Version $version -BuildInstaller
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${env:GITHUB_REF_NAME}"
+          $notes = "docs\RELEASE_NOTES_$tag.md"
+          $assets = Get-ChildItem artifacts -File | Where-Object { $_.Name -match '\.(zip|exe)$' } | ForEach-Object { $_.FullName }
+          if (Test-Path $notes) {
+            gh release create $tag $assets --title "Light Pilot $tag" --notes-file $notes
+          } else {
+            gh release create $tag $assets --title "Light Pilot $tag" --generate-notes
+          }

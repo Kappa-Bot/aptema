@@ -6,6 +6,8 @@
 
 Think CareUEyes/f.lux-style comfort, with a calmer adaptive engine and a cleaner professional UI.
 
+![Light Pilot main window](docs/assets/light-pilot-main.png)
+
 ## Highlights
 
 - Tray-first Windows desktop app
@@ -16,6 +18,11 @@ Think CareUEyes/f.lux-style comfort, with a calmer adaptive engine and a cleaner
 - DDC/CI monitor brightness when supported
 - WMI laptop brightness fallback
 - Smooth warm overlay for perceived color temperature
+- First-run onboarding
+- Too dim / Too bright preference feedback
+- Per-display rules: offset or disable control for a display
+- Battery-aware lighter checks
+- Inno Setup installer script and GitHub release automation
 - Optional local-only content brightness analysis, off by default
 - Startup registration with background launch
 - Single-instance behavior: opening the app brings the existing tray instance forward
@@ -59,7 +66,13 @@ dotnet test LightPilot.sln
 ## Package
 
 ```powershell
-.\scripts\package-release.ps1 -Version 0.1.0
+.\scripts\package-release.ps1 -Version 0.2.0
+```
+
+Build installer too when Inno Setup 6 is installed:
+
+```powershell
+.\scripts\package-release.ps1 -Version 0.2.0 -BuildInstaller
 ```
 
 ## Local Install
@@ -80,6 +93,12 @@ Smoke check:
 
 ```powershell
 .\scripts\smoke.ps1
+```
+
+Update local install from the latest GitHub release:
+
+```powershell
+.\scripts\update-local.ps1
 ```
 
 ## License

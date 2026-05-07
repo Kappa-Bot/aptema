@@ -62,6 +62,7 @@ public sealed record MonitorPreference
     public int? MinimumBrightnessPercent { get; init; }
     public int? MaximumBrightnessPercent { get; init; }
     public bool UseSoftwareFallback { get; init; }
+    public bool IsDisabled { get; init; }
 }
 
 public sealed record AppContextModel
@@ -140,6 +141,8 @@ public sealed record UserSettings
     public bool EnableDdcCi { get; init; } = true;
     public bool EnableContentBrightnessAnalysis { get; init; } = false;
     public bool GamingVideoProtection { get; init; } = true;
+    public bool ReduceWorkOnBattery { get; init; } = true;
+    public bool HasCompletedOnboarding { get; init; } = false;
     public TimeSpan TransitionSpeed { get; init; } = TimeSpan.FromSeconds(90);
     public IReadOnlyDictionary<string, AppCategory> AppOverrides { get; init; } = new Dictionary<string, AppCategory>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyList<MonitorPreference> MonitorPreferences { get; init; } = Array.Empty<MonitorPreference>();

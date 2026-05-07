@@ -15,6 +15,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly IForegroundWindowDetector _foregroundWindowDetector;
     private readonly IContentLuminanceSampler _contentLuminanceSampler;
     private readonly IBrightnessController _brightnessController;
+    private readonly IPowerStatusProvider _powerStatusProvider;
     private readonly DispatcherTimer _timer;
     private readonly List<MonitorModel> _monitorModels = [];
     private readonly Dictionary<string, AdaptiveEngineState> _engineStates = new(StringComparer.OrdinalIgnoreCase);
@@ -29,6 +30,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private string _transitionText = "";
     private bool _startWithWindows;
     private bool _refreshInProgress;
+    private readonly bool _hasInitialSettings;
     private CancellationTokenSource? _settingsSaveCts;
 
     public MainWindowViewModel(
@@ -36,13 +38,18 @@ public sealed class MainWindowViewModel : ObservableObject
         IMonitorEnumerator monitorEnumerator,
         IForegroundWindowDetector foregroundWindowDetector,
         IContentLuminanceSampler contentLuminanceSampler,
-        IBrightnessController brightnessController)
+        IBrightnessController brightnessController,
+        IPowerStatusProvider powerStatusProvider,
+        UserSettings? initialSettings = null)
     {
         _settingsStore = settingsStore;
         _monitorEnumerator = monitorEnumerator;
         _foregroundWindowDetector = foregroundWindowDetector;
         _contentLuminanceSampler = contentLuminanceSampler;
         _brightnessController = brightnessController;
+        _powerStatusProvider = powerStatusProvider;
+        _settings = initialSettings ?? UserSettings.Default;
+        _hasInitialSettings = initialSettings is not null;
 
         Monitors = [];
 
@@ -193,7 +200,10 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         try
         {
-            _settings = await _settingsStore.LoadAsync(CancellationToken.None).ConfigureAwait(true);
+            if (!_hasInitialSettings)
+            {
+                _settings = await _settingsStore.LoadAsync(CancellationToken.None).ConfigureAwait(true);
+            }
             OnPropertyChanged(nameof(Settings));
             OnPropertyChanged(nameof(AutoEnabled));
             OnPropertyChanged(nameof(ComfortIntensity));
@@ -222,7 +232,7 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         _monitorModels.Clear();
-        _monitorModels.AddRange(monitors);
+        _monitorModels.AddRange(ApplyMonitorPreferences(monitors, _settings));
         Monitors.Clear();
         foreach (var monitor in _monitorModels)
         {
@@ -252,7 +262,8 @@ public sealed class MainWindowViewModel : ObservableObject
             }
 
             var isPaused = _pauseUntil is not null;
-            var effectiveSettings = isPaused ? _settings with { AutoEnabled = false } : _settings;
+            var batteryAware = PowerAwareSettingsPolicy.Apply(_settings, _powerStatusProvider.IsOnBattery());
+            var effectiveSettings = isPaused ? batteryAware with { AutoEnabled = false } : batteryAware;
             var appContext = effectiveSettings.AutoEnabled
                 ? await Task.Run(() => SafeDetectContext()).ConfigureAwait(true)
                 : new AppContextModel("LightPilot.App", AppCategory.System, false);
@@ -265,6 +276,12 @@ public sealed class MainWindowViewModel : ObservableObject
             for (var index = 0; index < _monitorModels.Count; index++)
             {
                 var monitor = _monitorModels[index];
+                if (IsMonitorDisabled(monitor, _settings))
+                {
+                    UpdateDisabledMonitorStatus(index);
+                    continue;
+                }
+
                 var currentBrightness = BrightnessPercent == 0 ? 62 : BrightnessPercent;
                 var currentKelvin = ColorTemperatureKelvin == 0 ? 5200 : ColorTemperatureKelvin;
                 var snapshot = CreateSnapshot(monitor, appContext, content, currentBrightness, currentKelvin);
@@ -336,6 +353,25 @@ public sealed class MainWindowViewModel : ObservableObject
         return category == appContext.Category ? appContext : appContext with { Category = category };
     }
 
+    private static IReadOnlyList<MonitorModel> ApplyMonitorPreferences(IReadOnlyList<MonitorModel> monitors, UserSettings settings)
+    {
+        return monitors
+            .Select(monitor =>
+            {
+                var preference = settings.MonitorPreferences.FirstOrDefault(item => string.Equals(item.MonitorId, monitor.Id, StringComparison.OrdinalIgnoreCase));
+                return preference is null
+                    ? monitor
+                    : monitor with { BrightnessOffsetPercent = preference.BrightnessOffsetPercent };
+            })
+            .ToArray();
+    }
+
+    private static bool IsMonitorDisabled(MonitorModel monitor, UserSettings settings)
+    {
+        return settings.MonitorPreferences.Any(item =>
+            item.IsDisabled && string.Equals(item.MonitorId, monitor.Id, StringComparison.OrdinalIgnoreCase));
+    }
+
     private async Task<ContentLuminanceSample> SampleContentAsync(bool enabled)
     {
         try
@@ -373,6 +409,14 @@ public sealed class MainWindowViewModel : ObservableObject
         status.ControlLayer = GetControlLayer(monitor, effectiveSettings);
         status.Status = effectiveSettings.AutoEnabled && _pauseUntil is null ? "Ready" : "Paused";
         status.LightLevel = ComfortCopy.DescribeLightLevel(status.BrightnessPercent);
+    }
+
+    private void UpdateDisabledMonitorStatus(int index)
+    {
+        var status = Monitors[index];
+        status.Status = "Off";
+        status.LightLevel = "Not controlled";
+        status.ControlLayer = "Disabled";
     }
 
     private string BuildAutoStatus()
@@ -507,6 +551,7 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         UpdateTimerInterval();
+        _ = ReloadMonitorsAsync();
         _ = RefreshDecisionAsync();
     }
 

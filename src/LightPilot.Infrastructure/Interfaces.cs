@@ -47,3 +47,8 @@ public interface IContentLuminanceSampler
 {
     ValueTask<ContentLuminanceSample> SampleAsync(bool enabled, CancellationToken cancellationToken);
 }
+
+public interface IPowerStatusProvider
+{
+    bool IsOnBattery();
+}

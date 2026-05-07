@@ -132,6 +132,9 @@
                                 <CheckBox Content="Protect fullscreen games and videos"
                                           AutomationProperties.Name="Protect fullscreen games and videos"
                                           IsChecked="{Binding GamingVideoProtection, Mode=TwoWay}" />
+                                <CheckBox Content="Use lighter checks on battery"
+                                          AutomationProperties.Name="Use lighter checks on battery"
+                                          IsChecked="{Binding ReduceWorkOnBattery, Mode=TwoWay}" />
 
                                 <TextBlock Margin="0,16,0,4"
                                            Text="Smooth changes"
@@ -161,6 +164,20 @@
                                          Text="{Binding AppOverridesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                 <TextBlock Margin="0,5,0,0"
                                            Text="Example: chrome.exe=Development"
+                                           Foreground="{StaticResource MutedTextBrush}" />
+
+                                <TextBlock Margin="0,16,0,4"
+                                           Text="Display rules"
+                                           Foreground="{StaticResource MutedTextBrush}" />
+                                <TextBox MinHeight="78"
+                                         AcceptsReturn="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         TextWrapping="NoWrap"
+                                         AutomationProperties.Name="Display rules"
+                                         Text="{Binding MonitorPreferencesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="0,5,0,0"
+                                           Text="Examples: device:\\.\DISPLAY1=off or device:\\.\DISPLAY1=offset:+5"
+                                           TextWrapping="Wrap"
                                            Foreground="{StaticResource MutedTextBrush}" />
                             </StackPanel>
                         </Border>
