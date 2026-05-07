@@ -45,7 +45,7 @@ Run these checks after `dotnet build` and `dotnet test` pass.
 ## Packaging
 
 ```powershell
-.\scripts\package-release.ps1 -Version 0.2.0
+.\scripts\package-release.ps1 -Version 0.2.1
 ```
 
 ## Installer Scripts

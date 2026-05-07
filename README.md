@@ -66,13 +66,13 @@ dotnet test LightPilot.sln
 ## Package
 
 ```powershell
-.\scripts\package-release.ps1 -Version 0.2.0
+.\scripts\package-release.ps1 -Version 0.2.1
 ```
 
 Build installer too when Inno Setup 6 is installed:
 
 ```powershell
-.\scripts\package-release.ps1 -Version 0.2.0 -BuildInstaller
+.\scripts\package-release.ps1 -Version 0.2.1 -BuildInstaller
 ```
 
 ## Local Install

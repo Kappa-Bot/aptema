@@ -12,7 +12,7 @@ Light Pilot can run unsigned, but Windows SmartScreen trust improves with a real
 ## Local Signing Example
 
 ```powershell
-signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a artifacts\LightPilot-0.2.0-win-x64\LightPilot.App.exe
+signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /a artifacts\LightPilot-0.2.1-win-x64\LightPilot.App.exe
 ```
 
 `signtool.exe` is not currently detected in this workstation PATH.
