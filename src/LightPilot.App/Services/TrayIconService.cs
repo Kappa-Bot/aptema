@@ -12,46 +12,12 @@ public sealed class TrayIconService : IDisposable
     private readonly MainWindowViewModel _viewModel;
     private readonly Window _window;
     private readonly Forms.NotifyIcon _notifyIcon;
-    private readonly Forms.ToolStripMenuItem _autoItem;
-    private readonly Forms.ToolStripMenuItem _modeItem;
     private bool _disposed;
 
     public TrayIconService(MainWindowViewModel viewModel, Window window)
     {
         _viewModel = viewModel;
         _window = window;
-
-        var open = new Forms.ToolStripMenuItem("Open");
-        open.Click += (_, _) => ShowWindow();
-
-        _autoItem = new Forms.ToolStripMenuItem();
-        _autoItem.Click += (_, _) => _viewModel.ToggleAutoCommand.Execute(null);
-
-        var pauseThirty = new Forms.ToolStripMenuItem("Pause 30 minutes");
-        pauseThirty.Click += (_, _) => _viewModel.PauseThirtyMinutesCommand.Execute(null);
-
-        var pauseHour = new Forms.ToolStripMenuItem("Pause 1 hour");
-        pauseHour.Click += (_, _) => _viewModel.PauseOneHourCommand.Execute(null);
-
-        var pauseTomorrow = new Forms.ToolStripMenuItem("Pause tonight");
-        pauseTomorrow.Click += (_, _) => _viewModel.PauseUntilTomorrowCommand.Execute(null);
-
-        var resume = new Forms.ToolStripMenuItem("Resume");
-        resume.Click += (_, _) => _viewModel.ResumeCommand.Execute(null);
-
-        var clearComfort = new Forms.ToolStripMenuItem("Clear comfort for 30 minutes");
-        clearComfort.Click += (_, _) => _viewModel.ResetComfortCommand.Execute(null);
-
-        _modeItem = new Forms.ToolStripMenuItem { Enabled = false };
-
-        var settings = new Forms.ToolStripMenuItem("Settings");
-        settings.Click += (_, _) => _viewModel.OpenSettingsCommand.Execute(null);
-
-        var reset = new Forms.ToolStripMenuItem("Reset");
-        reset.Click += (_, _) => _viewModel.ResetCommand.Execute(null);
-
-        var exit = new Forms.ToolStripMenuItem("Exit");
-        exit.Click += (_, _) => _viewModel.ExitCommand.Execute(null);
 
         _notifyIcon = new Forms.NotifyIcon
         {
@@ -60,23 +26,6 @@ public sealed class TrayIconService : IDisposable
             Visible = true,
             ContextMenuStrip = new Forms.ContextMenuStrip()
         };
-        _notifyIcon.ContextMenuStrip.Items.AddRange(new Forms.ToolStripItem[]
-        {
-            open,
-            new Forms.ToolStripSeparator(),
-            _autoItem,
-            pauseThirty,
-            pauseHour,
-            pauseTomorrow,
-            resume,
-            clearComfort,
-            new Forms.ToolStripSeparator(),
-            _modeItem,
-            new Forms.ToolStripSeparator(),
-            settings,
-            reset,
-            exit
-        });
         _notifyIcon.MouseClick += (_, args) =>
         {
             if (args.Button == Forms.MouseButtons.Left)
@@ -125,7 +74,10 @@ public sealed class TrayIconService : IDisposable
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MainWindowViewModel.AutoStatus) or nameof(MainWindowViewModel.CurrentModeText))
+        if (e.PropertyName is nameof(MainWindowViewModel.AutoStatus)
+            or nameof(MainWindowViewModel.CurrentModeText)
+            or nameof(MainWindowViewModel.NextAdaptationText)
+            or nameof(MainWindowViewModel.AutoEnabled))
         {
             RefreshMenuText();
         }
@@ -133,11 +85,67 @@ public sealed class TrayIconService : IDisposable
 
     private void RefreshMenuText()
     {
-        _autoItem.Text = _viewModel.AutoEnabled ? "Automatic comfort on" : "Automatic comfort off";
-        _autoItem.Checked = _viewModel.AutoEnabled;
-        _modeItem.Text = $"Now: {_viewModel.CurrentModeText}";
-        var tooltip = $"Light Pilot - {_viewModel.AutoStatus}";
-        _notifyIcon.Text = tooltip.Length <= 63 ? tooltip : "Light Pilot";
+        var state = new TrayMenuState(
+            _viewModel.AutoEnabled,
+            _viewModel.AutoStatus.StartsWith("Paused", StringComparison.OrdinalIgnoreCase),
+            _viewModel.ComfortStateText,
+            _viewModel.CurrentModeText,
+            _viewModel.NextAdaptationText);
+
+        _notifyIcon.ContextMenuStrip?.Items.Clear();
+        foreach (var item in TrayMenuModelBuilder.Build(state))
+        {
+            if (item.IsSeparator)
+            {
+                _notifyIcon.ContextMenuStrip?.Items.Add(new Forms.ToolStripSeparator());
+                continue;
+            }
+
+            var menuItem = new Forms.ToolStripMenuItem(item.Text)
+            {
+                Checked = item.IsChecked,
+                Enabled = item.IsEnabled
+            };
+            menuItem.Click += (_, _) => Execute(item.CommandKey);
+            _notifyIcon.ContextMenuStrip?.Items.Add(menuItem);
+        }
+
+        _notifyIcon.Text = TrayMenuModelBuilder.BuildTooltip(state);
+    }
+
+    private void Execute(TrayMenuCommandKey commandKey)
+    {
+        switch (commandKey)
+        {
+            case TrayMenuCommandKey.ToggleAuto:
+                _viewModel.ToggleAutoCommand.Execute(null);
+                break;
+            case TrayMenuCommandKey.PauseThirtyMinutes:
+                _viewModel.PauseThirtyMinutesCommand.Execute(null);
+                break;
+            case TrayMenuCommandKey.PauseUntilTomorrow:
+                _viewModel.PauseUntilTomorrowCommand.Execute(null);
+                break;
+            case TrayMenuCommandKey.TooBright:
+                _viewModel.TooBrightCommand.Execute(null);
+                break;
+            case TrayMenuCommandKey.TooDim:
+                _viewModel.TooDimCommand.Execute(null);
+                break;
+            case TrayMenuCommandKey.Perfect:
+                _viewModel.PerfectCommand.Execute(null);
+                break;
+            case TrayMenuCommandKey.Open:
+                ShowWindow();
+                break;
+            case TrayMenuCommandKey.Settings:
+                _viewModel.OpenSettingsCommand.Execute(null);
+                ShowWindow();
+                break;
+            case TrayMenuCommandKey.Exit:
+                _viewModel.ExitCommand.Execute(null);
+                break;
+        }
     }
 
     private void ShowWindow()

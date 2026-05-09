@@ -10,6 +10,7 @@ public enum AppCategory
     VideoMedia,
     MusicAudio,
     OfficeReading,
+    Creative,
     System
 }
 
@@ -32,8 +33,35 @@ public enum LuminanceClassification
     Unknown,
     Dark,
     Neutral,
+    Balanced,
     Bright,
-    MostlyWhite
+    MostlyWhite,
+    HighContrast
+}
+
+public enum DayPhase
+{
+    Day,
+    Evening,
+    Night
+}
+
+public enum ComfortFeedback
+{
+    TooBright,
+    TooDim,
+    TooWarm,
+    TooCold,
+    Perfect
+}
+
+public enum DecisionSource
+{
+    Default,
+    Learned,
+    Manual,
+    Protected,
+    Paused
 }
 
 public enum BrightnessControlLayer
@@ -43,6 +71,35 @@ public enum BrightnessControlLayer
     WindowsBrightness,
     Overlay,
     Gamma
+}
+
+public enum MonitorControlState
+{
+    Ready,
+    NoChange,
+    Throttled,
+    FallbackUsed,
+    Degraded,
+    Unsupported,
+    Disabled,
+    Protected,
+    Failed
+}
+
+public sealed record BrightnessApplyResult(
+    string MonitorId,
+    BrightnessControlLayer PreferredLayer,
+    BrightnessControlLayer AppliedLayer,
+    MonitorControlState State,
+    string ReasonCode,
+    DateTimeOffset? SuppressedUntil = null,
+    bool UsedHardware = false,
+    bool UsedOverlay = false)
+{
+    public static BrightnessApplyResult NoChange(string monitorId, string reasonCode = "NoChange")
+    {
+        return new BrightnessApplyResult(monitorId, BrightnessControlLayer.None, BrightnessControlLayer.None, MonitorControlState.NoChange, reasonCode);
+    }
 }
 
 public sealed record MonitorModel(
@@ -103,7 +160,10 @@ public sealed record ComfortDecision(
     TimeSpan TransitionDuration,
     bool ShouldApply,
     string Reason,
-    IReadOnlyList<string> ReasonCodes)
+    IReadOnlyList<string> ReasonCodes,
+    double Confidence = 0.65,
+    DecisionSource Source = DecisionSource.Default,
+    bool IsLearned = false)
 {
     public LightTarget Target => new(TargetBrightnessPercent, TargetColorTemperatureKelvin, OverlayOpacity);
 }
@@ -127,11 +187,75 @@ public sealed record AdaptiveEngineState
     public DateTimeOffset? ProtectedUntil { get; init; }
 }
 
+public sealed record PreferenceLearningContext(
+    string MonitorId,
+    AppCategory AppCategory,
+    DayPhase DayPhase,
+    bool IsFullscreen,
+    LuminanceClassification Luminance)
+{
+    public string Key => string.Join('|',
+        Normalize(MonitorId),
+        AppCategory,
+        DayPhase,
+        IsFullscreen ? "fullscreen" : "windowed",
+        Luminance);
+
+    public static PreferenceLearningContext FromSnapshot(AdaptiveSnapshot snapshot)
+    {
+        return new PreferenceLearningContext(
+            snapshot.Monitor.Id,
+            snapshot.AppContext.Category,
+            DayPhasePolicy.GetPhase(snapshot.Now),
+            snapshot.AppContext.IsFullscreen,
+            snapshot.Content.Classification);
+    }
+
+    private static string Normalize(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "unknown" : value.Trim().ToUpperInvariant();
+    }
+}
+
+public sealed record PreferenceAdjustment(
+    int BrightnessOffsetPercent,
+    int WarmthOffsetKelvin,
+    double Confidence,
+    bool IsLearned)
+{
+    public static PreferenceAdjustment None { get; } = new(0, 0, 0, false);
+}
+
+public sealed record PreferenceCorrectionAggregate
+{
+    public string Key { get; init; } = "";
+    public string MonitorId { get; init; } = "";
+    public AppCategory AppCategory { get; init; } = AppCategory.Unknown;
+    public DayPhase DayPhase { get; init; } = DayPhase.Day;
+    public bool IsFullscreen { get; init; }
+    public LuminanceClassification Luminance { get; init; } = LuminanceClassification.Unknown;
+    public int Samples { get; init; }
+    public int PerfectCount { get; init; }
+    public int NetBrightnessScore { get; init; }
+    public int NetWarmthScore { get; init; }
+    public int BrightnessOffsetPercent { get; init; }
+    public int WarmthOffsetKelvin { get; init; }
+    public double Confidence { get; init; }
+    public DateTimeOffset LastUpdatedAt { get; init; }
+}
+
+public sealed record PreferenceLearningModel
+{
+    public static PreferenceLearningModel Empty { get; } = new();
+
+    public IReadOnlyList<PreferenceCorrectionAggregate> Aggregates { get; init; } = Array.Empty<PreferenceCorrectionAggregate>();
+}
+
 public sealed record UserSettings
 {
     public static UserSettings Default { get; } = new();
 
-    public int SchemaVersion { get; init; } = 2;
+    public int SchemaVersion { get; init; } = 3;
     public bool AutoEnabled { get; init; } = true;
     public int ComfortIntensity { get; init; } = 45;
     public TimeOnly WakeTime { get; init; } = new(7, 0);
@@ -140,10 +264,12 @@ public sealed record UserSettings
     public int MaximumBrightnessPercent { get; init; } = 90;
     public bool EnableDdcCi { get; init; } = true;
     public bool EnableContentBrightnessAnalysis { get; init; } = false;
+    public bool EnablePreferenceLearning { get; init; } = true;
     public bool GamingVideoProtection { get; init; } = true;
     public bool ReduceWorkOnBattery { get; init; } = true;
     public bool HasCompletedOnboarding { get; init; } = false;
     public TimeSpan TransitionSpeed { get; init; } = TimeSpan.FromSeconds(90);
+    public PreferenceLearningModel PreferenceLearning { get; init; } = PreferenceLearningModel.Empty;
     public IReadOnlyDictionary<string, AppCategory> AppOverrides { get; init; } = new Dictionary<string, AppCategory>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyList<MonitorPreference> MonitorPreferences { get; init; } = Array.Empty<MonitorPreference>();
 }

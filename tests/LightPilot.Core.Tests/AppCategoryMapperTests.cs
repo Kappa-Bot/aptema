@@ -21,6 +21,11 @@ public sealed class AppCategoryMapperTests
     [InlineData("Spotify.exe", AppCategory.MusicAudio)]
     [InlineData("Ableton Live.exe", AppCategory.MusicAudio)]
     [InlineData("reaper.exe", AppCategory.MusicAudio)]
+    [InlineData("Photoshop.exe", AppCategory.Creative)]
+    [InlineData("Illustrator.exe", AppCategory.Creative)]
+    [InlineData("Figma.exe", AppCategory.Creative)]
+    [InlineData("blender.exe", AppCategory.Creative)]
+    [InlineData("Resolve.exe", AppCategory.Creative)]
     public void KnownProcessesMapToExpectedCategories(string processName, AppCategory expected)
     {
         var mapper = AppCategoryMapper.CreateDefault();

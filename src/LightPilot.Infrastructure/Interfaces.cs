@@ -15,7 +15,7 @@ public interface IMonitorEnumerator
 
 public interface IBrightnessController
 {
-    ValueTask ApplyAsync(MonitorModel monitor, ComfortDecision decision, UserSettings settings, CancellationToken cancellationToken);
+    ValueTask<BrightnessApplyResult> ApplyAsync(MonitorModel monitor, ComfortDecision decision, UserSettings settings, CancellationToken cancellationToken);
 }
 
 public interface IDdcCiApi

@@ -59,7 +59,7 @@ public sealed class JsonSettingsStoreTests
 
         var settings = await store.LoadAsync(CancellationToken.None);
 
-        Assert.Equal(2, settings.SchemaVersion);
+        Assert.Equal(3, settings.SchemaVersion);
         Assert.Equal(45, settings.ComfortIntensity);
         Assert.Equal(TimeSpan.FromSeconds(90), settings.TransitionSpeed);
     }
@@ -80,9 +80,48 @@ public sealed class JsonSettingsStoreTests
 
         var settings = await store.LoadAsync(CancellationToken.None);
 
-        Assert.Equal(2, settings.SchemaVersion);
+        Assert.Equal(3, settings.SchemaVersion);
         Assert.Equal(72, settings.ComfortIntensity);
         Assert.Equal(TimeSpan.FromSeconds(130), settings.TransitionSpeed);
+    }
+
+    [Fact]
+    public async Task LoadAsyncMigratesV2SettingsToPreferenceLearningDefaults()
+    {
+        using var temp = new TempDirectory();
+        var path = Path.Combine(temp.Path, "settings.json");
+        var legacy = new UserSettings
+        {
+            SchemaVersion = 2,
+            ComfortIntensity = 47
+        };
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(legacy));
+        var store = new JsonSettingsStore(path);
+
+        var settings = await store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal(3, settings.SchemaVersion);
+        Assert.True(settings.EnablePreferenceLearning);
+        Assert.Empty(settings.PreferenceLearning.Aggregates);
+        Assert.Equal(47, settings.ComfortIntensity);
+    }
+
+    [Fact]
+    public async Task SaveAsyncRoundTripsLearnedPreferences()
+    {
+        using var temp = new TempDirectory();
+        var path = Path.Combine(temp.Path, "settings.json");
+        var store = new JsonSettingsStore(path);
+        var context = new PreferenceLearningContext("m1", AppCategory.Browser, DayPhase.Night, false, LuminanceClassification.MostlyWhite);
+        var learning = PreferenceLearningService.RecordFeedback(PreferenceLearningModel.Empty, context, ComfortFeedback.TooBright, DateTimeOffset.UtcNow);
+        var expected = UserSettings.Default with { PreferenceLearning = learning };
+
+        await store.SaveAsync(expected, CancellationToken.None);
+        var actual = await store.LoadAsync(CancellationToken.None);
+
+        var adjustment = PreferenceLearningService.GetAdjustment(actual.PreferenceLearning, context);
+        Assert.True(adjustment.IsLearned);
+        Assert.Equal(-2, adjustment.BrightnessOffsetPercent);
     }
 
     [Fact]

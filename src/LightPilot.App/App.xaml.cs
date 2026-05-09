@@ -54,7 +54,7 @@ public partial class App : System.Windows.Application
         _mainWindow = new MainWindow(_viewModel);
         _trayIcon = new TrayIconService(_viewModel, _mainWindow);
 
-        _viewModel.RequestSettings += (_, _) => ShowSettingsWindow();
+        _viewModel.RequestStartupRegistrationChanged += (_, enabled) => SetStartupEnabled(enabled);
         _viewModel.RequestExit += (_, _) => ExitApplication();
 
         MainWindow = _mainWindow;
@@ -93,11 +93,16 @@ public partial class App : System.Windows.Application
         if (settingsWindow.ShowDialog() == true)
         {
             _viewModel.ApplySettings(settingsWindow.Settings, settingsWindow.StartWithWindows);
-            var executablePath = Environment.ProcessPath;
-            if (!string.IsNullOrWhiteSpace(executablePath))
-            {
-                _startupRegistration.SetEnabled(settingsWindow.StartWithWindows, executablePath);
-            }
+            SetStartupEnabled(settingsWindow.StartWithWindows);
+        }
+    }
+
+    private void SetStartupEnabled(bool enabled)
+    {
+        var executablePath = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(executablePath))
+        {
+            _startupRegistration.SetEnabled(enabled, executablePath);
         }
     }
 

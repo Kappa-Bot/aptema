@@ -2,30 +2,25 @@
 
 ![Light Pilot logo](src/LightPilot.App/Assets/LightPilotLogo.png)
 
-**Light Pilot** is a local-first Windows screen comfort utility. It runs quietly in the tray, adapts brightness and warmth gradually, protects games/videos from disruptive changes, and keeps all screen analysis on-device.
+**Light Pilot** is a local-first Windows eye-comfort assistant. It runs from the tray, keeps screens comfortable automatically, and learns from quick corrections such as `Too bright`, `Too dim`, and `Perfect`.
 
-Think CareUEyes/f.lux-style comfort, with a calmer adaptive engine and a cleaner professional UI.
-
-![Light Pilot main window](docs/assets/light-pilot-main.png)
+It is designed to feel quieter and more personal than CareUEyes Lite, f.lux, or Windows Night Light: Auto on, tray running, minimal UI, gradual adjustments.
 
 ## Highlights
 
-- Tray-first Windows desktop app
-- Compact GUI with quick comfort presets: Light, Balanced, Deep
-- Gentle adaptive brightness: max 3 percentage points per decision
-- Gentle warmth transitions: max 200K per decision
-- Less aggressive default comfort intensity
+- Premium tray-first WPF app for Windows
+- 3-surface UI: Comfort Home, Quick Adjust, Settings
+- Contextual preference learning stored locally as aggregates only
+- Gentle automatic brightness: max 3 percentage points per decision
+- Gentle warmth: max 200K per decision
+- Manual corrections are capped and applied gradually
+- Fullscreen game/video/presentation protection
 - DDC/CI monitor brightness when supported
 - WMI laptop brightness fallback
-- Smooth warm overlay for perceived color temperature
-- First-run onboarding
-- Too dim / Too bright preference feedback
-- Per-display rules: offset or disable control for a display
-- Battery-aware lighter checks
-- Inno Setup installer script and GitHub release automation
+- Software overlay fallback when hardware control is unavailable
 - Optional local-only content brightness analysis, off by default
-- Startup registration with background launch
-- Single-instance behavior: opening the app brings the existing tray instance forward
+- Startup registration with `--background`
+- Single-instance tray behavior
 - MIT licensed
 
 ## Privacy
@@ -36,7 +31,10 @@ Light Pilot is local-first.
 - No telemetry
 - No screenshot storage
 - No clipboard usage
-- Optional content brightness analysis only computes in-memory luminance aggregates
+- No window title storage
+- Learned preferences store only app category, day phase, fullscreen state, luminance class, monitor id, offsets, and confidence
+
+Content brightness analysis is opt-in. When enabled, Light Pilot samples a tiny in-memory frame and immediately reduces it to brightness aggregates. Raw pixels are not persisted.
 
 ## Run From Source
 
@@ -63,18 +61,6 @@ dotnet run --project src/LightPilot.App/LightPilot.App.csproj -- --no-hardware
 dotnet test LightPilot.sln
 ```
 
-## Package
-
-```powershell
-.\scripts\package-release.ps1 -Version 0.2.1
-```
-
-Build installer too when Inno Setup 6 is installed:
-
-```powershell
-.\scripts\package-release.ps1 -Version 0.2.1 -BuildInstaller
-```
-
 ## Local Install
 
 ```powershell
@@ -83,22 +69,28 @@ Build installer too when Inno Setup 6 is installed:
 
 This installs to `%LOCALAPPDATA%\LightPilot\App`, creates a Start Menu shortcut, starts the tray app, and registers startup with `--background`.
 
-Uninstall local app files:
-
-```powershell
-.\scripts\uninstall-local.ps1
-```
-
 Smoke check:
 
 ```powershell
 .\scripts\smoke.ps1
 ```
 
-Update local install from the latest GitHub release:
+Uninstall local app files:
 
 ```powershell
-.\scripts\update-local.ps1
+.\scripts\uninstall-local.ps1
+```
+
+## Package
+
+```powershell
+.\scripts\package-release.ps1 -Version 0.3.0
+```
+
+Build installer too when Inno Setup 6 is installed:
+
+```powershell
+.\scripts\package-release.ps1 -Version 0.3.0 -BuildInstaller
 ```
 
 ## License

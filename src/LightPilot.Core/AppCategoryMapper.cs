@@ -34,7 +34,12 @@ public sealed class AppCategoryMapper
             ["winword.exe"] = AppCategory.OfficeReading,
             ["excel.exe"] = AppCategory.OfficeReading,
             ["powerpnt.exe"] = AppCategory.OfficeReading,
-            ["notepad.exe"] = AppCategory.OfficeReading
+            ["notepad.exe"] = AppCategory.OfficeReading,
+            ["photoshop.exe"] = AppCategory.Creative,
+            ["illustrator.exe"] = AppCategory.Creative,
+            ["figma.exe"] = AppCategory.Creative,
+            ["blender.exe"] = AppCategory.Creative,
+            ["resolve.exe"] = AppCategory.Creative
         };
 
         if (overrides is not null)

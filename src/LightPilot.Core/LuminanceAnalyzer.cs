@@ -59,6 +59,11 @@ public static class LuminanceAnalyzer
 
     private static LuminanceClassification Classify(double average, double whiteRatio, double brightRatio, double darkRatio)
     {
+        if (brightRatio >= 0.35 && darkRatio >= 0.35)
+        {
+            return LuminanceClassification.HighContrast;
+        }
+
         if (whiteRatio >= 0.60 && average >= 0.72)
         {
             return LuminanceClassification.MostlyWhite;
@@ -74,6 +79,6 @@ public static class LuminanceAnalyzer
             return LuminanceClassification.Dark;
         }
 
-        return LuminanceClassification.Neutral;
+        return LuminanceClassification.Balanced;
     }
 }

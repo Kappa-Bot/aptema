@@ -119,7 +119,9 @@ public sealed class JsonSettingsStore : ISettingsStore
             ComfortIntensity = intensity,
             MinimumBrightnessPercent = minimum,
             MaximumBrightnessPercent = maximum,
-            TransitionSpeed = transitionSpeed
+            TransitionSpeed = transitionSpeed,
+            EnablePreferenceLearning = settings.SchemaVersion < 3 || settings.EnablePreferenceLearning,
+            PreferenceLearning = settings.PreferenceLearning ?? PreferenceLearningModel.Empty
         };
     }
 

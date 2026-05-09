@@ -6,7 +6,8 @@ Run these checks after `dotnet build` and `dotnet test` pass.
 
 - Start `LightPilot.App`.
 - Confirm the compact main window opens.
-- Confirm the main window uses simple labels such as `Comfortable`, `Soft`, and `Adjusting gently`.
+- Confirm Home shows only comfort state, human mode, reason, display summary, Pause, and Adjust.
+- Confirm Quick Adjust has `Too bright`, `Too dim`, `Too warm`, `Too cold`, and `Perfect`.
 - On first foreground launch, confirm onboarding explains Balanced, Too bright/Too dim, and tray-first behavior.
 - Confirm closing the window hides it instead of terminating the app.
 - Confirm the tray icon remains available.
@@ -14,7 +15,7 @@ Run these checks after `dotnet build` and `dotnet test` pass.
 ## Tray
 
 - Left click opens the main window.
-- Right click shows Auto on/off, Pause 30 min, Pause until tomorrow, Current mode, Settings, Exit.
+- Right click shows Auto on/off, Pause 30 min, Pause until tomorrow, Too bright, Too dim, Perfect, Open Light Pilot, Settings, Exit.
 - Pause changes the main window state.
 - Resume returns to gradual automatic adjustment.
 - Exit shuts down tray icon and app process.
@@ -22,9 +23,10 @@ Run these checks after `dotnet build` and `dotnet test` pass.
 ## Settings
 
 - Change comfort intensity and restart the app.
-- Use `Too dim` and `Too bright`; confirm the comfort level changes gently.
+- Use Quick Adjust feedback; confirm correction is gradual and settings store learned aggregates only.
 - Confirm settings persist under `%LOCALAPPDATA%\LightPilot\settings.json`.
 - Confirm content brightness analysis is off by default.
+- Confirm preference learning can be disabled and reset.
 - Confirm reset restores safe defaults.
 - Add a display rule with `=off`; confirm that display shows `Not controlled`.
 
@@ -45,7 +47,7 @@ Run these checks after `dotnet build` and `dotnet test` pass.
 ## Packaging
 
 ```powershell
-.\scripts\package-release.ps1 -Version 0.2.1
+.\scripts\package-release.ps1 -Version 0.3.0
 ```
 
 ## Installer Scripts

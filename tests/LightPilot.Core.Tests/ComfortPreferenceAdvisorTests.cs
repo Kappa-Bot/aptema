@@ -34,4 +34,29 @@ public sealed class ComfortPreferenceAdvisorTests
         Assert.Equal(0, ComfortPreferenceAdvisor.Apply(low, ComfortFeedback.TooDim).ComfortIntensity);
         Assert.Equal(100, ComfortPreferenceAdvisor.Apply(high, ComfortFeedback.TooBright).ComfortIntensity);
     }
+
+    [Fact]
+    public void ContextualFeedbackStoresLearningSignal()
+    {
+        var settings = UserSettings.Default;
+        var context = new PreferenceLearningContext("monitor-1", AppCategory.Browser, DayPhase.Night, false, LuminanceClassification.MostlyWhite);
+
+        var updated = ComfortPreferenceAdvisor.Apply(settings, ComfortFeedback.TooWarm, context, new DateTimeOffset(2026, 5, 8, 23, 0, 0, TimeSpan.Zero));
+
+        var adjustment = PreferenceLearningService.GetAdjustment(updated.PreferenceLearning, context);
+        Assert.True(updated.AutoEnabled);
+        Assert.True(adjustment.IsLearned);
+        Assert.Equal(80, adjustment.WarmthOffsetKelvin);
+    }
+
+    [Fact]
+    public void PerfectFeedbackDoesNotMoveGlobalIntensity()
+    {
+        var settings = UserSettings.Default with { ComfortIntensity = 45 };
+
+        var updated = ComfortPreferenceAdvisor.Apply(settings, ComfortFeedback.Perfect);
+
+        Assert.Equal(45, updated.ComfortIntensity);
+        Assert.True(updated.AutoEnabled);
+    }
 }

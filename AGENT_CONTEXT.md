@@ -17,6 +17,8 @@ Do not turn the app into a dashboard. Normal UI must avoid charts, raw logs, and
 - Fullscreen games/videos/presentations should not receive disruptive changes.
 - Normal UI should be human-first: avoid control-layer names, raw reasons, and percentage-heavy presentation.
 - Adaptive transitions should remain gradual: brightness max 3 points per decision, warmth max 200K per decision.
+- Quick Adjust feedback must store only local aggregates. Do not store window titles, screenshots, pixels, or content.
+- Home must stay calm: no dense display list, no raw percentages, no DDC/WMI/overlay labels.
 
 ## Project Shape
 
@@ -26,6 +28,7 @@ src/LightPilot.Infrastructure
 src/LightPilot.App
 tests/LightPilot.Core.Tests
 tests/LightPilot.Infrastructure.Tests
+tests/LightPilot.App.Tests
 docs/
 ```
 
@@ -41,3 +44,10 @@ dotnet test LightPilot.sln
 ```
 
 Do not run native tests that change real monitor brightness unless the user explicitly opts in.
+
+Local install and startup smoke:
+
+```powershell
+.\scripts\install-local.ps1
+.\scripts\smoke.ps1
+```

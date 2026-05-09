@@ -14,11 +14,13 @@ public sealed class BrightnessControllerTests
         var controller = new BrightnessController(ddc, windows, overlay, TimeProvider.System);
         var monitor = Monitor with { SupportsBrightnessControl = true };
 
-        await controller.ApplyAsync(monitor, Decision(52), UserSettings.Default, CancellationToken.None);
+        var result = await controller.ApplyAsync(monitor, Decision(52), UserSettings.Default, CancellationToken.None);
 
         Assert.Equal(52, ddc.LastBrightness);
         Assert.Null(windows.LastBrightness);
         Assert.Equal(0, overlay.LastOpacity);
+        Assert.Equal(MonitorControlState.Ready, result.State);
+        Assert.Equal(BrightnessControlLayer.DdcCi, result.AppliedLayer);
     }
 
     [Fact]
@@ -29,10 +31,12 @@ public sealed class BrightnessControllerTests
         var controller = new BrightnessController(ddc, new FakeWindowsBrightnessApi(canSet: false), overlay, TimeProvider.System);
         var monitor = Monitor with { SupportsBrightnessControl = true };
 
-        await controller.ApplyAsync(monitor, Decision(52, overlayOpacity: 0.08), UserSettings.Default, CancellationToken.None);
+        var result = await controller.ApplyAsync(monitor, Decision(52, overlayOpacity: 0.08), UserSettings.Default, CancellationToken.None);
 
         Assert.Equal(52, ddc.LastBrightness);
         Assert.Equal(0.08, overlay.LastOpacity);
+        Assert.True(result.UsedHardware);
+        Assert.True(result.UsedOverlay);
     }
 
     [Fact]
@@ -43,9 +47,11 @@ public sealed class BrightnessControllerTests
         var overlay = new FakeOverlayController();
         var controller = new BrightnessController(ddc, windows, overlay, TimeProvider.System);
 
-        await controller.ApplyAsync(Monitor, Decision(45, overlayOpacity: 0.2), UserSettings.Default, CancellationToken.None);
+        var result = await controller.ApplyAsync(Monitor, Decision(45, overlayOpacity: 0.2), UserSettings.Default, CancellationToken.None);
 
         Assert.Equal(0.2, overlay.LastOpacity);
+        Assert.Equal(MonitorControlState.FallbackUsed, result.State);
+        Assert.Equal(BrightnessControlLayer.Overlay, result.AppliedLayer);
     }
 
     [Fact]
@@ -57,10 +63,11 @@ public sealed class BrightnessControllerTests
 
         await controller.ApplyAsync(Monitor, Decision(50), UserSettings.Default, CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(1));
-        await controller.ApplyAsync(Monitor, Decision(55), UserSettings.Default, CancellationToken.None);
+        var result = await controller.ApplyAsync(Monitor, Decision(55), UserSettings.Default, CancellationToken.None);
 
         Assert.Equal(1, ddc.WriteCount);
         Assert.Equal(50, ddc.LastBrightness);
+        Assert.Equal(MonitorControlState.Throttled, result.State);
     }
 
     [Fact]
@@ -78,17 +85,86 @@ public sealed class BrightnessControllerTests
             time.Advance(TimeSpan.FromSeconds(3));
         }
 
-        await controller.ApplyAsync(monitor, Decision(60), UserSettings.Default, CancellationToken.None);
+        var result = await controller.ApplyAsync(monitor, Decision(60), UserSettings.Default, CancellationToken.None);
 
         Assert.Equal(3, ddc.WriteCount);
         Assert.Equal(60, windows.LastBrightness);
+        Assert.Equal(MonitorControlState.Degraded, result.State);
+        Assert.Equal(BrightnessControlLayer.WindowsBrightness, result.AppliedLayer);
+        Assert.NotNull(result.SuppressedUntil);
+    }
+
+    [Fact]
+    public async Task ProtectedDecisionDoesNotWriteHardware()
+    {
+        var ddc = new FakeDdcCiApi(canSet: true);
+        var windows = new FakeWindowsBrightnessApi(canSet: true);
+        var overlay = new FakeOverlayController();
+        var controller = new BrightnessController(ddc, windows, overlay, TimeProvider.System);
+
+        var result = await controller.ApplyAsync(Monitor, Decision(50, shouldApply: false, source: DecisionSource.Protected), UserSettings.Default, CancellationToken.None);
+
+        Assert.Equal(MonitorControlState.Protected, result.State);
+        Assert.Null(ddc.LastBrightness);
+        Assert.Null(windows.LastBrightness);
+        Assert.Null(overlay.LastOpacity);
+    }
+
+    [Fact]
+    public async Task DisabledMonitorReturnsDisabledWithoutWrites()
+    {
+        var ddc = new FakeDdcCiApi(canSet: true);
+        var controller = new BrightnessController(ddc, new FakeWindowsBrightnessApi(canSet: true), new FakeOverlayController(), TimeProvider.System);
+        var settings = UserSettings.Default with
+        {
+            MonitorPreferences = new[]
+            {
+                new MonitorPreference { MonitorId = "m1", IsDisabled = true }
+            }
+        };
+
+        var result = await controller.ApplyAsync(Monitor, Decision(50), settings, CancellationToken.None);
+
+        Assert.Equal(MonitorControlState.Disabled, result.State);
+        Assert.Null(ddc.LastBrightness);
+    }
+
+    [Fact]
+    public async Task NativeFailureFallsBackToOverlayWithoutThrowing()
+    {
+        var ddc = new ThrowingDdcCiApi();
+        var windows = new ThrowingWindowsBrightnessApi();
+        var overlay = new FakeOverlayController();
+        var controller = new BrightnessController(ddc, windows, overlay, TimeProvider.System);
+
+        var result = await controller.ApplyAsync(Monitor, Decision(45, overlayOpacity: 0.12), UserSettings.Default, CancellationToken.None);
+
+        Assert.Equal(MonitorControlState.Failed, result.State);
+        Assert.Equal(BrightnessControlLayer.Overlay, result.AppliedLayer);
+        Assert.Equal("HardwareControlFailed", result.ReasonCode);
+        Assert.Equal(0.12, overlay.LastOpacity);
+    }
+
+    [Fact]
+    public async Task OverlayFailureReturnsFailedWithoutThrowing()
+    {
+        var controller = new BrightnessController(
+            new FakeDdcCiApi(canSet: false),
+            new FakeWindowsBrightnessApi(canSet: false),
+            new ThrowingOverlayController(),
+            TimeProvider.System);
+
+        var result = await controller.ApplyAsync(Monitor, Decision(45, overlayOpacity: 0.12), UserSettings.Default, CancellationToken.None);
+
+        Assert.Equal(MonitorControlState.Failed, result.State);
+        Assert.Equal("OverlayControlFailed", result.ReasonCode);
     }
 
     private static MonitorModel Monitor => new("m1", "Desk", true, true, 15, 100, 0);
 
-    private static ComfortDecision Decision(int brightness, double overlayOpacity = 0)
+    private static ComfortDecision Decision(int brightness, double overlayOpacity = 0, bool shouldApply = true, DecisionSource source = DecisionSource.Default)
     {
-        return new ComfortDecision(ComfortProfileId.Evening, brightness, 4200, overlayOpacity, TimeSpan.FromSeconds(45), true, "test", Array.Empty<string>());
+        return new ComfortDecision(ComfortProfileId.Evening, brightness, 4200, overlayOpacity, TimeSpan.FromSeconds(45), shouldApply, "test", Array.Empty<string>(), Source: source);
     }
 }
 
@@ -132,6 +208,30 @@ internal sealed class FakeOverlayController : IOverlayController
     {
         LastOpacity = opacity;
         return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class ThrowingOverlayController : IOverlayController
+{
+    public ValueTask ApplyAsync(MonitorModel monitor, double opacity, int colorTemperatureKelvin, CancellationToken cancellationToken)
+    {
+        throw new InvalidOperationException("overlay failed");
+    }
+}
+
+internal sealed class ThrowingDdcCiApi : IDdcCiApi
+{
+    public ValueTask<bool> TrySetBrightnessAsync(MonitorModel monitor, int brightnessPercent, CancellationToken cancellationToken)
+    {
+        throw new InvalidOperationException("native failed");
+    }
+}
+
+internal sealed class ThrowingWindowsBrightnessApi : IWindowsBrightnessApi
+{
+    public ValueTask<bool> TrySetBrightnessAsync(MonitorModel monitor, int brightnessPercent, CancellationToken cancellationToken)
+    {
+        throw new InvalidOperationException("wmi failed");
     }
 }
 

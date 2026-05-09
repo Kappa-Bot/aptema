@@ -32,11 +32,25 @@ public sealed class LuminanceAnalyzerTests
     }
 
     [Fact]
-    public void GrayFrameIsNeutral()
+    public void GrayFrameIsBalanced()
     {
         var sample = LuminanceAnalyzer.Analyze(CreateRgb(120, 120, 120, 100));
 
-        Assert.Equal(LuminanceClassification.Neutral, sample.Classification);
+        Assert.Equal(LuminanceClassification.Balanced, sample.Classification);
+    }
+
+    [Fact]
+    public void BrightAndDarkFrameIsHighContrast()
+    {
+        var bytes = new List<byte>();
+        bytes.AddRange(CreateRgb(255, 255, 255, 50));
+        bytes.AddRange(CreateRgb(0, 0, 0, 50));
+
+        var sample = LuminanceAnalyzer.Analyze(bytes.ToArray());
+
+        Assert.Equal(LuminanceClassification.HighContrast, sample.Classification);
+        Assert.True(sample.BrightPixelRatio >= 0.5);
+        Assert.True(sample.DarkPixelRatio >= 0.5);
     }
 
     private static byte[] CreateRgb(byte r, byte g, byte b, int pixels)

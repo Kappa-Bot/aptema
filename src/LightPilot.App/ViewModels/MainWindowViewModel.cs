@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Windows;
 using System.Windows.Threading;
 using LightPilot.Core;
 using LightPilot.Infrastructure;
@@ -28,10 +29,16 @@ public sealed class MainWindowViewModel : ObservableObject
     private string _reason = "Starting Light Pilot";
     private string _autoStatus = "Auto on";
     private string _transitionText = "";
+    private string _displaySummary = "Displays protected";
+    private string _nextAdaptationText = "Next check soon";
     private bool _startWithWindows;
     private bool _refreshInProgress;
     private readonly bool _hasInitialSettings;
     private CancellationTokenSource? _settingsSaveCts;
+    private MainSurface _selectedSurface = MainSurface.Home;
+    private SettingsViewModel? _settingsDraft;
+    private AppContextModel _lastAppContext = new("unknown.exe", AppCategory.Unknown, false);
+    private ContentLuminanceSample _lastContent = ContentLuminanceSample.Unknown;
 
     public MainWindowViewModel(
         ISettingsStore settingsStore,
@@ -63,10 +70,17 @@ public sealed class MainWindowViewModel : ObservableObject
         ResetComfortCommand = new RelayCommand(() => _ = ResetComfortNowAsync());
         TooBrightCommand = new RelayCommand(() => ApplyComfortFeedback(ComfortFeedback.TooBright));
         TooDimCommand = new RelayCommand(() => ApplyComfortFeedback(ComfortFeedback.TooDim));
+        TooWarmCommand = new RelayCommand(() => ApplyComfortFeedback(ComfortFeedback.TooWarm));
+        TooColdCommand = new RelayCommand(() => ApplyComfortFeedback(ComfortFeedback.TooCold));
+        PerfectCommand = new RelayCommand(() => ApplyComfortFeedback(ComfortFeedback.Perfect));
         SetCalmCommand = new RelayCommand(() => SetIntensityPreset(25));
         SetBalancedCommand = new RelayCommand(() => SetIntensityPreset(45));
         SetDeepComfortCommand = new RelayCommand(() => SetIntensityPreset(70));
-        OpenSettingsCommand = new RelayCommand(() => RequestSettings?.Invoke(this, EventArgs.Empty));
+        ShowHomeCommand = new RelayCommand(ShowHome);
+        ShowQuickAdjustCommand = new RelayCommand(ShowQuickAdjust);
+        OpenSettingsCommand = new RelayCommand(ShowSettingsSurface);
+        SaveSettingsCommand = new RelayCommand(SaveSettingsSurface);
+        CancelSettingsCommand = new RelayCommand(ShowHome);
         ExitCommand = new RelayCommand(() => RequestExit?.Invoke(this, EventArgs.Empty));
 
         _timer = new DispatcherTimer { Interval = RefreshCadencePolicy.GetInterval(_settings, isPaused: false, isContentAnalysisEnabled: false) };
@@ -75,8 +89,8 @@ public sealed class MainWindowViewModel : ObservableObject
         _ = InitializeAsync();
     }
 
-    public event EventHandler? RequestSettings;
     public event EventHandler? RequestExit;
+    public event EventHandler<bool>? RequestStartupRegistrationChanged;
 
     public ObservableCollection<MonitorStatusViewModel> Monitors { get; }
 
@@ -90,10 +104,17 @@ public sealed class MainWindowViewModel : ObservableObject
     public RelayCommand ResetComfortCommand { get; }
     public RelayCommand TooBrightCommand { get; }
     public RelayCommand TooDimCommand { get; }
+    public RelayCommand TooWarmCommand { get; }
+    public RelayCommand TooColdCommand { get; }
+    public RelayCommand PerfectCommand { get; }
     public RelayCommand SetCalmCommand { get; }
     public RelayCommand SetBalancedCommand { get; }
     public RelayCommand SetDeepComfortCommand { get; }
+    public RelayCommand ShowHomeCommand { get; }
+    public RelayCommand ShowQuickAdjustCommand { get; }
     public RelayCommand OpenSettingsCommand { get; }
+    public RelayCommand SaveSettingsCommand { get; }
+    public RelayCommand CancelSettingsCommand { get; }
     public RelayCommand ExitCommand { get; }
 
     public UserSettings Settings => _settings;
@@ -172,6 +193,44 @@ public sealed class MainWindowViewModel : ObservableObject
         private set => SetProperty(ref _transitionText, value);
     }
 
+    public string DisplaySummary
+    {
+        get => _displaySummary;
+        private set => SetProperty(ref _displaySummary, value);
+    }
+
+    public string NextAdaptationText
+    {
+        get => _nextAdaptationText;
+        private set => SetProperty(ref _nextAdaptationText, value);
+    }
+
+    public MainSurface SelectedSurface
+    {
+        get => _selectedSurface;
+        private set
+        {
+            if (SetProperty(ref _selectedSurface, value))
+            {
+                OnPropertyChanged(nameof(HomeVisibility));
+                OnPropertyChanged(nameof(QuickAdjustVisibility));
+                OnPropertyChanged(nameof(SettingsVisibility));
+            }
+        }
+    }
+
+    public Visibility HomeVisibility => SelectedSurface == MainSurface.Home ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility QuickAdjustVisibility => SelectedSurface == MainSurface.QuickAdjust ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility SettingsVisibility => SelectedSurface == MainSurface.Settings ? Visibility.Visible : Visibility.Collapsed;
+
+    public SettingsViewModel? SettingsDraft
+    {
+        get => _settingsDraft;
+        private set => SetProperty(ref _settingsDraft, value);
+    }
+
     public string BrightnessText => ComfortCopy.DescribeLightLevel(BrightnessPercent);
 
     public string WarmthText => ComfortCopy.DescribeWarmth(ColorTemperatureKelvin);
@@ -188,6 +247,24 @@ public sealed class MainWindowViewModel : ObservableObject
         ComfortProfileId.Day => "Day",
         _ => CurrentMode.ToString()
     };
+
+    public string ComfortStateText
+    {
+        get
+        {
+            if (!_settings.AutoEnabled)
+            {
+                return "Comfort is paused";
+            }
+
+            if (_pauseUntil is not null)
+            {
+                return "Paused for now";
+            }
+
+            return "Comfortable now";
+        }
+    }
 
     public void ApplySettings(UserSettings settings, bool startWithWindows)
     {
@@ -268,11 +345,17 @@ public sealed class MainWindowViewModel : ObservableObject
                 ? await Task.Run(() => SafeDetectContext()).ConfigureAwait(true)
                 : new AppContextModel("LightPilot.App", AppCategory.System, false);
             appContext = ApplyAppOverrides(appContext, effectiveSettings);
+            var shouldSampleContent = effectiveSettings.EnableContentBrightnessAnalysis &&
+                appContext.Category is AppCategory.Browser or AppCategory.EmailCommunication or AppCategory.OfficeReading;
             var content = effectiveSettings.AutoEnabled
-                ? await SampleContentAsync(effectiveSettings.EnableContentBrightnessAnalysis).ConfigureAwait(true)
+                ? await SampleContentAsync(shouldSampleContent).ConfigureAwait(true)
                 : ContentLuminanceSample.Unknown;
+            _lastAppContext = appContext;
+            _lastContent = content;
 
             ComfortDecision? primaryDecision = null;
+            var fallbackDisplays = 0;
+            var protectedDisplays = 0;
             for (var index = 0; index < _monitorModels.Count; index++)
             {
                 var monitor = _monitorModels[index];
@@ -288,7 +371,16 @@ public sealed class MainWindowViewModel : ObservableObject
                 var state = _engineStates.GetValueOrDefault(monitor.Id, AdaptiveEngineState.Empty);
                 var decision = _engine.Evaluate(snapshot, state, effectiveSettings);
 
-                await _brightnessController.ApplyAsync(monitor, decision, effectiveSettings, CancellationToken.None).ConfigureAwait(true);
+                var applyResult = await _brightnessController.ApplyAsync(monitor, decision, effectiveSettings, CancellationToken.None).ConfigureAwait(true);
+                if (applyResult.State is MonitorControlState.FallbackUsed or MonitorControlState.Degraded or MonitorControlState.Failed)
+                {
+                    fallbackDisplays++;
+                }
+
+                if (applyResult.State == MonitorControlState.Protected)
+                {
+                    protectedDisplays++;
+                }
 
                 if (decision.ShouldApply)
                 {
@@ -299,7 +391,7 @@ public sealed class MainWindowViewModel : ObservableObject
                     };
                 }
 
-                UpdateMonitorStatus(index, monitor, decision, effectiveSettings);
+                UpdateMonitorStatus(index, monitor, decision, effectiveSettings, applyResult);
                 primaryDecision ??= decision;
             }
 
@@ -317,11 +409,14 @@ public sealed class MainWindowViewModel : ObservableObject
             }
 
             AutoStatus = BuildAutoStatus();
+            DisplaySummary = BuildDisplaySummary(fallbackDisplays, protectedDisplays);
+            NextAdaptationText = $"Next check in {(int)_timer.Interval.TotalSeconds}s";
             UpdateTimerInterval();
             OnPropertyChanged(nameof(BrightnessText));
             OnPropertyChanged(nameof(WarmthText));
             OnPropertyChanged(nameof(ComfortIntensityText));
             OnPropertyChanged(nameof(CurrentModeText));
+            OnPropertyChanged(nameof(ComfortStateText));
         }
         finally
         {
@@ -397,7 +492,7 @@ public sealed class MainWindowViewModel : ObservableObject
             _pauseUntil);
     }
 
-    private void UpdateMonitorStatus(int index, MonitorModel monitor, ComfortDecision decision, UserSettings effectiveSettings)
+    private void UpdateMonitorStatus(int index, MonitorModel monitor, ComfortDecision decision, UserSettings effectiveSettings, BrightnessApplyResult applyResult)
     {
         var status = Monitors[index];
         if (decision.ShouldApply || status.BrightnessPercent == 0)
@@ -406,8 +501,8 @@ public sealed class MainWindowViewModel : ObservableObject
             status.ColorTemperatureKelvin = monitor.SupportsColorTemperature ? decision.TargetColorTemperatureKelvin : 6500;
         }
 
-        status.ControlLayer = GetControlLayer(monitor, effectiveSettings);
-        status.Status = effectiveSettings.AutoEnabled && _pauseUntil is null ? "Ready" : "Paused";
+        status.ControlLayer = GetControlLayer(monitor, effectiveSettings, applyResult);
+        status.Status = GetMonitorStatusText(effectiveSettings, applyResult);
         status.LightLevel = ComfortCopy.DescribeLightLevel(status.BrightnessPercent);
     }
 
@@ -434,14 +529,57 @@ public sealed class MainWindowViewModel : ObservableObject
         return "Auto active";
     }
 
-    private static string GetControlLayer(MonitorModel monitor, UserSettings settings)
+    private string BuildDisplaySummary(int fallbackDisplays, int protectedDisplays)
     {
-        if (settings.EnableDdcCi && monitor.SupportsBrightnessControl)
+        var active = _monitorModels.Count(monitor => !IsMonitorDisabled(monitor, _settings));
+        if (active <= 0)
         {
-            return "DDC/CI";
+            return "No displays controlled";
         }
 
-        return monitor.SupportsBrightnessControl ? "Windows brightness" : "Overlay fallback";
+        if (fallbackDisplays > 0)
+        {
+            return fallbackDisplays == 1 ? "1 display using fallback" : $"{fallbackDisplays} displays using fallback";
+        }
+
+        if (protectedDisplays > 0)
+        {
+            return protectedDisplays == 1 ? "1 display protected" : $"{protectedDisplays} displays protected";
+        }
+
+        return active == 1 ? "1 display protected" : $"{active} displays protected";
+    }
+
+    private static string GetControlLayer(MonitorModel monitor, UserSettings settings, BrightnessApplyResult result)
+    {
+        return result.AppliedLayer switch
+        {
+            BrightnessControlLayer.DdcCi => "DDC/CI",
+            BrightnessControlLayer.WindowsBrightness => "Windows brightness",
+            BrightnessControlLayer.Overlay => "Overlay fallback",
+            BrightnessControlLayer.None when settings.EnableDdcCi && monitor.SupportsBrightnessControl => "DDC/CI",
+            BrightnessControlLayer.None => monitor.SupportsBrightnessControl ? "Windows brightness" : "Overlay fallback",
+            _ => "Fallback"
+        };
+    }
+
+    private static string GetMonitorStatusText(UserSettings effectiveSettings, BrightnessApplyResult result)
+    {
+        if (!effectiveSettings.AutoEnabled)
+        {
+            return "Paused";
+        }
+
+        return result.State switch
+        {
+            MonitorControlState.Degraded => "Fallback",
+            MonitorControlState.FallbackUsed => "Fallback",
+            MonitorControlState.Failed => "Fallback",
+            MonitorControlState.Throttled => "Smoothing",
+            MonitorControlState.Protected => "Protected",
+            MonitorControlState.Disabled => "Off",
+            _ => "Ready"
+        };
     }
 
     private void ToggleAuto()
@@ -526,11 +664,45 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private void ApplyComfortFeedback(ComfortFeedback feedback)
     {
-        var updated = ComfortPreferenceAdvisor.Apply(_settings, feedback);
+        _ = ApplyComfortFeedbackAsync(feedback);
+    }
+
+    private async Task ApplyComfortFeedbackAsync(ComfortFeedback feedback)
+    {
+        var now = DateTimeOffset.Now;
+        var monitor = _monitorModels.FirstOrDefault() ?? new MonitorModel("primary", "Primary display", false, true, 15, 100, 0);
+        var currentBrightness = BrightnessPercent == 0 ? 62 : BrightnessPercent;
+        var currentKelvin = ColorTemperatureKelvin == 0 ? 5200 : ColorTemperatureKelvin;
+        var snapshot = CreateSnapshot(monitor, _lastAppContext, _lastContent, currentBrightness, currentKelvin);
+        var context = PreferenceLearningContext.FromSnapshot(snapshot);
+        var updated = ComfortPreferenceAdvisor.Apply(_settings, feedback, context, now);
         UpdateSettings(updated, persist: true);
-        Reason = feedback == ComfortFeedback.TooBright ? "Got it. Making light softer." : "Got it. Keeping light clearer.";
+
+        var decision = _engine.EvaluateManualFeedback(snapshot, updated, feedback);
+        foreach (var display in _monitorModels)
+        {
+            await _brightnessController.ApplyAsync(display, decision, updated, CancellationToken.None).ConfigureAwait(true);
+        }
+
+        if (feedback != ComfortFeedback.Perfect)
+        {
+            BrightnessPercent = decision.TargetBrightnessPercent;
+            ColorTemperatureKelvin = decision.TargetColorTemperatureKelvin;
+        }
+
+        Reason = feedback switch
+        {
+            ComfortFeedback.TooBright => "Got it. Softer from here.",
+            ComfortFeedback.TooDim => "Got it. Keeping it clearer.",
+            ComfortFeedback.TooWarm => "Got it. Less warm.",
+            ComfortFeedback.TooCold => "Got it. A little warmer.",
+            ComfortFeedback.Perfect => "Saved. Light Pilot will remember this.",
+            _ => "Saved."
+        };
         TransitionText = "Learning";
         OnPropertyChanged(nameof(ComfortIntensityText));
+        OnPropertyChanged(nameof(BrightnessText));
+        OnPropertyChanged(nameof(WarmthText));
     }
 
     private void SetIntensityPreset(int intensity)
@@ -553,6 +725,36 @@ public sealed class MainWindowViewModel : ObservableObject
         UpdateTimerInterval();
         _ = ReloadMonitorsAsync();
         _ = RefreshDecisionAsync();
+    }
+
+    private void ShowHome()
+    {
+        SelectedSurface = MainSurface.Home;
+    }
+
+    private void ShowQuickAdjust()
+    {
+        SelectedSurface = MainSurface.QuickAdjust;
+    }
+
+    private void ShowSettingsSurface()
+    {
+        SettingsDraft = new SettingsViewModel(_settings, StartWithWindows);
+        SelectedSurface = MainSurface.Settings;
+    }
+
+    private void SaveSettingsSurface()
+    {
+        if (SettingsDraft is null)
+        {
+            SelectedSurface = MainSurface.Home;
+            return;
+        }
+
+        var startWithWindows = SettingsDraft.StartWithWindows;
+        ApplySettings(SettingsDraft.ToSettings(_settings), startWithWindows);
+        RequestStartupRegistrationChanged?.Invoke(this, startWithWindows);
+        SelectedSurface = MainSurface.Home;
     }
 
     private async Task PersistSettingsAsync(UserSettings settings, bool immediate)
@@ -603,4 +805,11 @@ public sealed class MainWindowViewModel : ObservableObject
 
         return now < TimeSpan.FromHours(8) || now >= TimeSpan.FromHours(21.5) ? "Night" : "Day";
     }
+}
+
+public enum MainSurface
+{
+    Home,
+    QuickAdjust,
+    Settings
 }

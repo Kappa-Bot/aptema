@@ -6,193 +6,370 @@
         mc:Ignorable="d"
         Title="Light Pilot"
         Icon="Assets/LightPilot.ico"
-        Width="420"
-        MinWidth="390"
-        Height="520"
-        MinHeight="490"
+        Width="460"
+        MinWidth="430"
+        Height="620"
+        MinHeight="560"
         WindowStartupLocation="CenterScreen">
-    <Grid Margin="18">
+    <Grid Margin="22">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <DockPanel Grid.Row="0" LastChildFill="True">
             <Border DockPanel.Dock="Left"
-                    Width="52"
-                    Height="52"
-                    CornerRadius="16"
+                    Width="46"
+                    Height="46"
+                    CornerRadius="14"
                     Background="{StaticResource BrandGradientBrush}">
                 <Image Source="Assets/LightPilotLogo.png"
-                       Width="40"
-                       Height="40"
+                       Width="34"
+                       Height="34"
                        VerticalAlignment="Center"
                        HorizontalAlignment="Center" />
             </Border>
             <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-                <TextBlock Text="Light Pilot" FontSize="23" FontWeight="SemiBold" />
-                <TextBlock Text="Automatic screen comfort" Foreground="{StaticResource MutedTextBrush}" />
+                <TextBlock Text="Light Pilot" FontSize="22" FontWeight="SemiBold" />
+                <TextBlock Text="Adaptive eye comfort" Foreground="{StaticResource MutedTextBrush}" />
             </StackPanel>
         </DockPanel>
 
-        <Border Grid.Row="1"
-                Margin="0,18,0,0"
-                Padding="18"
-                Background="{StaticResource PanelBackgroundBrush}"
-                BorderBrush="{StaticResource BorderBrushMuted}"
-                BorderThickness="1"
-                CornerRadius="8">
-            <StackPanel>
-                <DockPanel>
-                    <Border DockPanel.Dock="Right"
-                            Background="#E8F2F5"
-                            BorderBrush="#B9D9E5"
+        <UniformGrid Grid.Row="1" Columns="3" Margin="0,20,0,18">
+            <Button Content="Home"
+                    Margin="0,0,6,0"
+                    Style="{StaticResource QuietButton}"
+                    Command="{Binding ShowHomeCommand}" />
+            <Button Content="Adjust"
+                    Margin="3,0,3,0"
+                    Style="{StaticResource QuietButton}"
+                    Command="{Binding ShowQuickAdjustCommand}" />
+            <Button Content="Settings"
+                    Margin="6,0,0,0"
+                    Style="{StaticResource QuietButton}"
+                    Command="{Binding OpenSettingsCommand}" />
+        </UniformGrid>
+
+        <Grid Grid.Row="2">
+            <Grid Visibility="{Binding HomeVisibility}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding ComfortStateText}"
+                               FontSize="34"
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap" />
+                    <TextBlock Margin="0,10,0,0"
+                               Text="{Binding CurrentModeText}"
+                               FontSize="19"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource AccentBrush}" />
+                    <TextBlock Margin="0,8,0,0"
+                               Text="{Binding Reason}"
+                               FontSize="15"
+                               TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedTextBrush}" />
+
+                    <Border Margin="0,28,0,0"
+                            Padding="16"
+                            Background="{StaticResource PanelBackgroundBrush}"
+                            BorderBrush="{StaticResource BorderBrushMuted}"
                             BorderThickness="1"
-                            CornerRadius="8"
-                            Padding="10,5"
-                            VerticalAlignment="Top">
-                        <TextBlock Text="{Binding AutoStatus}"
-                                   Foreground="#0D5168"
-                                   FontWeight="SemiBold" />
+                            CornerRadius="8">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="{Binding DisplaySummary}"
+                                           FontSize="16"
+                                           FontWeight="SemiBold" />
+                                <TextBlock DockPanel.Dock="Right"
+                                           Text="{Binding AutoStatus}"
+                                           Foreground="{StaticResource MutedTextBrush}" />
+                            </DockPanel>
+                            <TextBlock Margin="0,8,0,0"
+                                       Text="{Binding NextAdaptationText}"
+                                       Foreground="{StaticResource MutedTextBrush}" />
+                        </StackPanel>
                     </Border>
-                    <StackPanel>
-                        <TextBlock Text="{Binding CurrentModeText}"
-                                   FontSize="27"
-                                   FontWeight="SemiBold" />
-                        <TextBlock Margin="0,5,22,0"
-                                   Text="{Binding Reason}"
-                                   TextWrapping="Wrap"
-                                   Foreground="{StaticResource MutedTextBrush}" />
-                    </StackPanel>
-                </DockPanel>
-
-                <UniformGrid Columns="3" Margin="0,18,0,0">
-                    <StackPanel>
-                        <TextBlock Text="Light" Foreground="{StaticResource MutedTextBrush}" />
-                        <TextBlock Text="{Binding BrightnessText}" FontSize="18" FontWeight="SemiBold" />
-                    </StackPanel>
-                    <StackPanel>
-                        <TextBlock Text="Warmth" Foreground="{StaticResource MutedTextBrush}" />
-                        <TextBlock Text="{Binding WarmthText}" FontSize="18" FontWeight="SemiBold" />
-                    </StackPanel>
-                    <StackPanel>
-                        <TextBlock Text="Flow" Foreground="{StaticResource MutedTextBrush}" />
-                        <TextBlock Text="{Binding TransitionText}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
-                    </StackPanel>
-                </UniformGrid>
-
-                <StackPanel Margin="0,20,0,0">
-                    <DockPanel>
-                        <TextBlock DockPanel.Dock="Left"
-                                   Text="Comfort"
-                                   Foreground="{StaticResource MutedTextBrush}" />
-                        <TextBlock DockPanel.Dock="Right"
-                                   Text="{Binding ComfortIntensityText}"
-                                   FontWeight="SemiBold" />
-                    </DockPanel>
-                    <Slider Minimum="0"
-                            Maximum="100"
-                            TickFrequency="5"
-                            IsSnapToTickEnabled="True"
-                            AutomationProperties.Name="Comfort"
-                            Value="{Binding ComfortIntensity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                    <UniformGrid Columns="3" Margin="0,9,0,0">
-                        <Button Content="Light"
-                                Margin="0,0,6,0"
-                                Style="{StaticResource QuietButton}"
-                                Command="{Binding SetCalmCommand}" />
-                        <Button Content="Balanced"
-                                Margin="3,0,3,0"
-                                Style="{StaticResource QuietButton}"
-                                Command="{Binding SetBalancedCommand}" />
-                        <Button Content="Deep"
-                                Margin="6,0,0,0"
-                                Style="{StaticResource QuietButton}"
-                                Command="{Binding SetDeepComfortCommand}" />
-                    </UniformGrid>
-                    <UniformGrid Columns="2" Margin="0,10,0,0">
-                        <Button Content="Too dim"
-                                Margin="0,0,5,0"
-                                AutomationProperties.Name="Light is too dim"
-                                Command="{Binding TooDimCommand}" />
-                        <Button Content="Too bright"
-                                Margin="5,0,0,0"
-                                AutomationProperties.Name="Light is too bright"
-                                Command="{Binding TooBrightCommand}" />
-                    </UniformGrid>
                 </StackPanel>
-            </StackPanel>
-        </Border>
 
-        <Border Grid.Row="2"
-                Margin="0,14,0,0"
-                Padding="14"
-                Background="{StaticResource PanelBackgroundBrush}"
-                BorderBrush="{StaticResource BorderBrushMuted}"
-                BorderThickness="1"
-                CornerRadius="8">
-            <StackPanel>
-                <TextBlock Text="Displays" FontWeight="SemiBold" />
-                <ScrollViewer Margin="0,8,0,0" VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding Monitors}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Margin="0,3,0,12">
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="8" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
+                <Grid Grid.Row="1" Margin="0,18,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0"
+                            MinHeight="46"
+                            Content="Pause 30 min"
+                            Command="{Binding PauseThirtyMinutesCommand}" />
+                    <Button Grid.Column="2"
+                            MinHeight="46"
+                            Content="Adjust"
+                            Style="{StaticResource QuietButton}"
+                            Command="{Binding ShowQuickAdjustCommand}" />
+                </Grid>
+            </Grid>
+
+            <Grid Visibility="{Binding QuickAdjustVisibility}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <TextBlock Text="Quick adjust" FontSize="28" FontWeight="SemiBold" />
+                    <TextBlock Margin="0,8,0,0"
+                               Text="Tell Light Pilot how this feels. It will remember the pattern locally."
+                               TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedTextBrush}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" VerticalAlignment="Center">
+                    <UniformGrid Columns="2">
+                        <Button Content="Too bright"
+                                MinHeight="58"
+                                Margin="0,0,8,8"
+                                Command="{Binding TooBrightCommand}" />
+                        <Button Content="Too dim"
+                                MinHeight="58"
+                                Margin="8,0,0,8"
+                                Command="{Binding TooDimCommand}" />
+                        <Button Content="Too warm"
+                                MinHeight="58"
+                                Margin="0,8,8,8"
+                                Command="{Binding TooWarmCommand}" />
+                        <Button Content="Too cold"
+                                MinHeight="58"
+                                Margin="8,8,0,8"
+                                Command="{Binding TooColdCommand}" />
+                    </UniformGrid>
+                    <Button Content="Perfect"
+                            MinHeight="54"
+                            Margin="0,10,0,0"
+                            Style="{StaticResource QuietButton}"
+                            Command="{Binding PerfectCommand}" />
+
+                    <Border Margin="0,26,0,0"
+                            Padding="16"
+                            Background="{StaticResource PanelBackgroundBrush}"
+                            BorderBrush="{StaticResource BorderBrushMuted}"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                        <StackPanel>
+                            <DockPanel>
+                                <TextBlock Text="Comfort intensity" Foreground="{StaticResource MutedTextBrush}" />
+                                <TextBlock DockPanel.Dock="Right"
+                                           Text="{Binding ComfortIntensityText}"
+                                           FontWeight="SemiBold" />
+                            </DockPanel>
+                            <Slider Minimum="0"
+                                    Maximum="100"
+                                    TickFrequency="5"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding ComfortIntensity, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                            <UniformGrid Columns="3" Margin="0,10,0,0">
+                                <Button Content="Light"
+                                        Margin="0,0,6,0"
+                                        Style="{StaticResource QuietButton}"
+                                        Command="{Binding SetCalmCommand}" />
+                                <Button Content="Balanced"
+                                        Margin="3,0,3,0"
+                                        Style="{StaticResource QuietButton}"
+                                        Command="{Binding SetBalancedCommand}" />
+                                <Button Content="Deep"
+                                        Margin="6,0,0,0"
+                                        Style="{StaticResource QuietButton}"
+                                        Command="{Binding SetDeepComfortCommand}" />
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <Button Grid.Row="2"
+                        Content="Back"
+                        Style="{StaticResource QuietButton}"
+                        Command="{Binding ShowHomeCommand}" />
+            </Grid>
+
+            <Grid Visibility="{Binding SettingsVisibility}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0">
+                    <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" />
+                    <TextBlock Margin="0,8,0,0"
+                               Text="Advanced controls stay here so daily use stays quiet."
+                               TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedTextBrush}" />
+                </StackPanel>
+
+                <ScrollViewer Grid.Row="1" Margin="0,16,0,16" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border Padding="16"
+                                Background="{StaticResource PanelBackgroundBrush}"
+                                BorderBrush="{StaticResource BorderBrushMuted}"
+                                BorderThickness="1"
+                                CornerRadius="8">
+                            <StackPanel>
+                                <TextBlock Text="Everyday" FontWeight="SemiBold" />
+                                <CheckBox Margin="0,10,0,0"
+                                          Content="Start with Windows"
+                                          IsChecked="{Binding SettingsDraft.StartWithWindows, Mode=TwoWay}" />
+                                <DockPanel Margin="0,14,0,4">
+                                    <TextBlock Text="Comfort intensity" Foreground="{StaticResource MutedTextBrush}" />
+                                    <TextBlock DockPanel.Dock="Right"
+                                               Text="{Binding SettingsDraft.ComfortIntensityText}"
+                                               FontWeight="SemiBold" />
+                                </DockPanel>
+                                <Slider Minimum="0"
+                                        Maximum="100"
+                                        TickFrequency="5"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding SettingsDraft.ComfortIntensity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="0,12,0,0"
+                                Padding="16"
+                                Background="{StaticResource PanelBackgroundBrush}"
+                                BorderBrush="{StaticResource BorderBrushMuted}"
+                                BorderThickness="1"
+                                CornerRadius="8">
+                            <StackPanel>
+                                <TextBlock Text="Safety" FontWeight="SemiBold" />
+                                <Grid Margin="0,12,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-
-                                    <StackPanel Grid.Row="0" Grid.Column="0">
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding LightLevel}" Foreground="{StaticResource MutedTextBrush}" />
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Minimum" Foreground="{StaticResource MutedTextBrush}" />
+                                        <Slider Minimum="15"
+                                                Maximum="100"
+                                                TickFrequency="5"
+                                                IsSnapToTickEnabled="True"
+                                                Value="{Binding SettingsDraft.MinimumBrightnessPercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock Text="{Binding SettingsDraft.MinimumBrightnessPercent, StringFormat={}{0}%}" FontWeight="SemiBold" />
                                     </StackPanel>
-                                    <TextBlock Grid.Row="0"
-                                               Grid.Column="1"
-                                               Text="{Binding Status}"
-                                               Foreground="{StaticResource MutedTextBrush}"
-                                               VerticalAlignment="Center" />
-                                    <ProgressBar Grid.Row="2"
-                                                 Grid.ColumnSpan="2"
-                                                 Minimum="0"
-                                                 Maximum="100"
-                                                 Value="{Binding BrightnessPercent}" />
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Maximum" Foreground="{StaticResource MutedTextBrush}" />
+                                        <Slider Minimum="15"
+                                                Maximum="100"
+                                                TickFrequency="5"
+                                                IsSnapToTickEnabled="True"
+                                                Value="{Binding SettingsDraft.MaximumBrightnessPercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock Text="{Binding SettingsDraft.MaximumBrightnessPercent, StringFormat={}{0}%}" FontWeight="SemiBold" />
+                                    </StackPanel>
                                 </Grid>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                            </StackPanel>
+                        </Border>
+
+                        <Expander Margin="0,12,0,0" Header="Advanced" IsExpanded="False">
+                            <StackPanel Margin="0,10,0,0">
+                                <Border Padding="16"
+                                        Background="{StaticResource PanelBackgroundBrush}"
+                                        BorderBrush="{StaticResource BorderBrushMuted}"
+                                        BorderThickness="1"
+                                        CornerRadius="8">
+                                    <StackPanel>
+                                        <CheckBox Content="Use DDC/CI physical brightness"
+                                                  IsChecked="{Binding SettingsDraft.EnableDdcCi, Mode=TwoWay}" />
+                                        <CheckBox Content="Analyze average brightness locally"
+                                                  IsChecked="{Binding SettingsDraft.EnableContentBrightnessAnalysis, Mode=TwoWay}" />
+                                        <TextBlock Margin="0,4,0,8"
+                                                   Text="Only average brightness is read. Images are never stored or sent."
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{StaticResource MutedTextBrush}" />
+                                        <CheckBox Content="Learn from quick adjustments"
+                                                  IsChecked="{Binding SettingsDraft.EnablePreferenceLearning, Mode=TwoWay}" />
+                                        <Button Margin="0,6,0,8"
+                                                Content="Reset learned comfort"
+                                                Style="{StaticResource QuietButton}"
+                                                Command="{Binding SettingsDraft.ResetLearningCommand}" />
+                                        <CheckBox Content="Protect fullscreen games and videos"
+                                                  IsChecked="{Binding SettingsDraft.GamingVideoProtection, Mode=TwoWay}" />
+                                        <CheckBox Content="Reduce work on battery"
+                                                  IsChecked="{Binding SettingsDraft.ReduceWorkOnBattery, Mode=TwoWay}" />
+
+                                        <TextBlock Margin="0,16,0,4"
+                                                   Text="Transition speed"
+                                                   Foreground="{StaticResource MutedTextBrush}" />
+                                        <Slider Minimum="30"
+                                                Maximum="240"
+                                                TickFrequency="10"
+                                                IsSnapToTickEnabled="True"
+                                                Value="{Binding SettingsDraft.TransitionSpeedSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock Text="{Binding SettingsDraft.TransitionSpeedSeconds, StringFormat={}{0}s}" FontWeight="SemiBold" />
+
+                                        <TextBlock Margin="0,16,0,4"
+                                                   Text="App category overrides"
+                                                   Foreground="{StaticResource MutedTextBrush}" />
+                                        <TextBox MinHeight="80"
+                                                 AcceptsReturn="True"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 Text="{Binding SettingsDraft.AppOverridesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                        <TextBlock Margin="0,16,0,4"
+                                                   Text="Monitor preferences"
+                                                   Foreground="{StaticResource MutedTextBrush}" />
+                                        <TextBox MinHeight="80"
+                                                 AcceptsReturn="True"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 Text="{Binding SettingsDraft.MonitorPreferencesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                                        <ItemsControl Margin="0,16,0,0" ItemsSource="{Binding Monitors}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Margin="0,0,0,8"
+                                                            Padding="12"
+                                                            Background="#F7F9FA"
+                                                            BorderBrush="{StaticResource BorderBrushMuted}"
+                                                            BorderThickness="1"
+                                                            CornerRadius="8">
+                                                        <DockPanel>
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                                                <TextBlock Text="{Binding ControlLayer}" Foreground="{StaticResource MutedTextBrush}" />
+                                                            </StackPanel>
+                                                            <TextBlock DockPanel.Dock="Right"
+                                                                       Text="{Binding Status}"
+                                                                       Foreground="{StaticResource MutedTextBrush}" />
+                                                        </DockPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Expander>
+                    </StackPanel>
                 </ScrollViewer>
-            </StackPanel>
-        </Border>
 
-        <Grid Grid.Row="3" Margin="0,16,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="8" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="8" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <Button Grid.Column="0"
-                    Content="Pause"
-                    AutomationProperties.Name="Pause Light Pilot"
-                    Command="{Binding PauseCommand}" />
-            <Button Grid.Column="2"
-                    Content="Resume"
-                    AutomationProperties.Name="Resume automatic comfort"
-                    Command="{Binding ResumeCommand}" />
-            <Button Grid.Column="4"
-                    Content="Settings"
-                    AutomationProperties.Name="Open settings"
-                    Command="{Binding OpenSettingsCommand}" />
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0"
+                            Content="Cancel"
+                            Style="{StaticResource QuietButton}"
+                            Command="{Binding CancelSettingsCommand}" />
+                    <Button Grid.Column="2"
+                            Content="Save"
+                            Command="{Binding SaveSettingsCommand}" />
+                </Grid>
+            </Grid>
         </Grid>
     </Grid>
 </Window>

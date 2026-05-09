@@ -41,7 +41,9 @@ public sealed class AdaptiveEngineTests
 
         Assert.Equal(ComfortProfileId.Gaming, decision.Profile);
         Assert.Equal(68, decision.TargetBrightnessPercent);
-        Assert.InRange(decision.TargetColorTemperatureKelvin, 4300, 5200);
+        Assert.Equal(6500, decision.TargetColorTemperatureKelvin);
+        Assert.False(decision.ShouldApply);
+        Assert.Equal(DecisionSource.Protected, decision.Source);
         Assert.Equal("Gaming fullscreen protection", decision.Reason);
     }
 
@@ -80,6 +82,8 @@ public sealed class AdaptiveEngineTests
 
         Assert.Equal(ComfortProfileId.Video, decision.Profile);
         Assert.Equal(61, decision.TargetBrightnessPercent);
+        Assert.False(decision.ShouldApply);
+        Assert.Equal(DecisionSource.Protected, decision.Source);
         Assert.Equal("Video playback protected", decision.Reason);
     }
 
@@ -131,6 +135,75 @@ public sealed class AdaptiveEngineTests
         var decision = engine.Evaluate(snapshot, AdaptiveEngineState.Empty, UserSettings.Default);
 
         Assert.Equal(6300, decision.TargetColorTemperatureKelvin);
+    }
+
+    [Fact]
+    public void LearnedOffsetsApplyBeforeStepLimitAndMarkDecisionLearned()
+    {
+        var engine = new AdaptiveEngine();
+        var context = new PreferenceLearningContext("monitor-1", AppCategory.Browser, DayPhase.Night, false, LuminanceClassification.MostlyWhite);
+        var learning = PreferenceLearningModel.Empty;
+        var now = new DateTimeOffset(2026, 5, 8, 23, 0, 0, TimeSpan.Zero);
+        for (var i = 0; i < 6; i++)
+        {
+            learning = PreferenceLearningService.RecordFeedback(learning, context, ComfortFeedback.TooBright, now.AddMinutes(i));
+        }
+
+        var settings = UserSettings.Default with { PreferenceLearning = learning };
+        var snapshot = TestSnapshots.Default with
+        {
+            Now = now.AddMinutes(10),
+            AppContext = new AppContextModel("chrome.exe", AppCategory.Browser, isFullscreen: false),
+            Content = new ContentLuminanceSample(true, 0.82, 0.72, 0.81, 0.02, LuminanceClassification.MostlyWhite),
+            CurrentBrightness = 70,
+            CurrentColorTemperatureKelvin = 6500
+        };
+
+        var decision = engine.Evaluate(snapshot, AdaptiveEngineState.Empty, settings);
+
+        Assert.True(decision.IsLearned);
+        Assert.Equal(DecisionSource.Learned, decision.Source);
+        Assert.InRange(decision.Confidence, 0.99, 1.0);
+        Assert.Equal(67, decision.TargetBrightnessPercent);
+        Assert.Equal(6300, decision.TargetColorTemperatureKelvin);
+    }
+
+    [Fact]
+    public void ManualFeedbackBypassesCooldownWithinSafeCorrectionLimit()
+    {
+        var engine = new AdaptiveEngine();
+        var snapshot = TestSnapshots.Default with
+        {
+            CurrentBrightness = 70,
+            CurrentColorTemperatureKelvin = 5600
+        };
+
+        var decision = engine.EvaluateManualFeedback(snapshot, UserSettings.Default, ComfortFeedback.TooBright);
+
+        Assert.True(decision.ShouldApply);
+        Assert.Equal(DecisionSource.Manual, decision.Source);
+        Assert.Equal(64, decision.TargetBrightnessPercent);
+        Assert.Equal(5300, decision.TargetColorTemperatureKelvin);
+    }
+
+    [Fact]
+    public void ManualFeedbackInProtectedFullscreenAvoidsBrightnessWrite()
+    {
+        var engine = new AdaptiveEngine();
+        var snapshot = TestSnapshots.Default with
+        {
+            AppContext = new AppContextModel("overwatch.exe", AppCategory.Gaming, isFullscreen: true),
+            CurrentBrightness = 72,
+            CurrentColorTemperatureKelvin = 6200
+        };
+
+        var decision = engine.EvaluateManualFeedback(snapshot, UserSettings.Default, ComfortFeedback.TooBright);
+
+        Assert.True(decision.ShouldApply);
+        Assert.Equal(DecisionSource.Manual, decision.Source);
+        Assert.Equal(72, decision.TargetBrightnessPercent);
+        Assert.Equal(5900, decision.TargetColorTemperatureKelvin);
+        Assert.True(decision.OverlayOpacity > 0);
     }
 
     [Fact]

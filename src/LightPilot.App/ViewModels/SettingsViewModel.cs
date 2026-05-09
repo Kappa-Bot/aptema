@@ -12,19 +12,24 @@ public sealed class SettingsViewModel : ObservableObject
     private int _maximumBrightnessPercent;
     private bool _enableDdcCi;
     private bool _enableContentBrightnessAnalysis;
+    private bool _enablePreferenceLearning;
     private bool _gamingVideoProtection;
     private bool _reduceWorkOnBattery;
     private int _transitionSpeedSeconds;
     private string _appOverridesText = "";
     private string _monitorPreferencesText = "";
+    private bool _resetLearningRequested;
 
     public SettingsViewModel(UserSettings settings, bool startWithWindows)
     {
         Load(settings, startWithWindows);
         ResetCommand = new RelayCommand(Reset);
+        ResetLearningCommand = new RelayCommand(ResetLearning);
     }
 
     public RelayCommand ResetCommand { get; }
+
+    public RelayCommand ResetLearningCommand { get; }
 
     public bool StartWithWindows
     {
@@ -94,6 +99,12 @@ public sealed class SettingsViewModel : ObservableObject
         set => SetProperty(ref _enableContentBrightnessAnalysis, value);
     }
 
+    public bool EnablePreferenceLearning
+    {
+        get => _enablePreferenceLearning;
+        set => SetProperty(ref _enablePreferenceLearning, value);
+    }
+
     public bool GamingVideoProtection
     {
         get => _gamingVideoProtection;
@@ -140,9 +151,11 @@ public sealed class SettingsViewModel : ObservableObject
             MaximumBrightnessPercent = maximum,
             EnableDdcCi = EnableDdcCi,
             EnableContentBrightnessAnalysis = EnableContentBrightnessAnalysis,
+            EnablePreferenceLearning = EnablePreferenceLearning,
             GamingVideoProtection = GamingVideoProtection,
             ReduceWorkOnBattery = ReduceWorkOnBattery,
             TransitionSpeed = TimeSpan.FromSeconds(Math.Clamp(TransitionSpeedSeconds, 30, 240)),
+            PreferenceLearning = _resetLearningRequested ? PreferenceLearningModel.Empty : current.PreferenceLearning,
             AppOverrides = AppOverrideTextCodec.Parse(AppOverridesText),
             MonitorPreferences = MonitorPreferenceTextCodec.Parse(MonitorPreferencesText)
         };
@@ -150,6 +163,7 @@ public sealed class SettingsViewModel : ObservableObject
 
     private void Load(UserSettings settings, bool startWithWindows)
     {
+        _resetLearningRequested = false;
         StartWithWindows = startWithWindows;
         ComfortIntensity = settings.ComfortIntensity;
         WakeTime = settings.WakeTime.ToString("HH:mm");
@@ -158,6 +172,7 @@ public sealed class SettingsViewModel : ObservableObject
         MaximumBrightnessPercent = settings.MaximumBrightnessPercent;
         EnableDdcCi = settings.EnableDdcCi;
         EnableContentBrightnessAnalysis = settings.EnableContentBrightnessAnalysis;
+        EnablePreferenceLearning = settings.EnablePreferenceLearning;
         GamingVideoProtection = settings.GamingVideoProtection;
         ReduceWorkOnBattery = settings.ReduceWorkOnBattery;
         TransitionSpeedSeconds = (int)Math.Round(settings.TransitionSpeed.TotalSeconds);
@@ -168,6 +183,12 @@ public sealed class SettingsViewModel : ObservableObject
     private void Reset()
     {
         Load(UserSettings.Default, false);
+    }
+
+    private void ResetLearning()
+    {
+        EnablePreferenceLearning = true;
+        _resetLearningRequested = true;
     }
 
     private static TimeOnly ParseTime(string value, TimeOnly fallback)
