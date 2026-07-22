@@ -1,21 +1,18 @@
 using LightPilot.Core;
+using LightPilot.Application;
 
 namespace LightPilot.Infrastructure;
 
-public interface ISettingsStore
+public interface ISettingsStore : LightPilot.Application.ISettingsStore
 {
-    ValueTask<UserSettings> LoadAsync(CancellationToken cancellationToken);
-    ValueTask SaveAsync(UserSettings settings, CancellationToken cancellationToken);
 }
 
-public interface IMonitorEnumerator
+public interface IMonitorEnumerator : LightPilot.Application.IMonitorEnumerator
 {
-    ValueTask<IReadOnlyList<MonitorModel>> EnumerateAsync(CancellationToken cancellationToken);
 }
 
-public interface IBrightnessController
+public interface IBrightnessController : LightPilot.Application.IBrightnessController
 {
-    ValueTask<BrightnessApplyResult> ApplyAsync(MonitorModel monitor, ComfortDecision decision, UserSettings settings, CancellationToken cancellationToken);
 }
 
 public interface IDdcCiApi
@@ -33,9 +30,8 @@ public interface IOverlayController
     ValueTask ApplyAsync(MonitorModel monitor, double opacity, int colorTemperatureKelvin, CancellationToken cancellationToken);
 }
 
-public interface IForegroundWindowDetector
+public interface IForegroundWindowDetector : LightPilot.Application.IForegroundWindowDetector
 {
-    AppContextModel Detect();
 }
 
 public interface IFullscreenDetector
@@ -43,12 +39,10 @@ public interface IFullscreenDetector
     bool IsFullscreen(WindowSnapshot snapshot);
 }
 
-public interface IContentLuminanceSampler
+public interface IContentLuminanceSampler : LightPilot.Application.IContentLuminanceSampler
 {
-    ValueTask<ContentLuminanceSample> SampleAsync(bool enabled, CancellationToken cancellationToken);
 }
 
-public interface IPowerStatusProvider
+public interface IPowerStatusProvider : LightPilot.Application.IPowerStatusProvider
 {
-    bool IsOnBattery();
 }

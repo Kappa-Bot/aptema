@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\LightPilot.Application\LightPilot.Application.csproj" />
     <ProjectReference Include="..\LightPilot.Core\LightPilot.Core.csproj" />
     <ProjectReference Include="..\LightPilot.Infrastructure\LightPilot.Infrastructure.csproj" />
   </ItemGroup>

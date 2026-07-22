@@ -1,4 +1,5 @@
 using System.Windows;
+using LightPilot.Application;
 using LightPilot.App.Services;
 using LightPilot.App.ViewModels;
 using LightPilot.Core;
@@ -12,6 +13,7 @@ public partial class App : System.Windows.Application
     private SingleInstanceGuard? _singleInstanceGuard;
     private MainWindow? _mainWindow;
     private MainWindowViewModel? _viewModel;
+    private IComfortSession? _comfortSession;
     private TrayIconService? _trayIcon;
     private WpfOverlayController? _overlayController;
 
@@ -33,21 +35,34 @@ public partial class App : System.Windows.Application
         var initialSettings = settingsStore.LoadAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
         var noHardware = e.Args.Any(arg => string.Equals(arg, "--no-hardware", StringComparison.OrdinalIgnoreCase));
         var background = e.Args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
-        IBrightnessController brightnessController = noHardware
+        LightPilot.Application.IBrightnessController brightnessController = noHardware
             ? new NoOpBrightnessController()
             : new BrightnessController(
                 new DdcCiApi(),
                 new WindowsBrightnessApi(),
                 _overlayController);
+        var clock = new TimeProviderClock();
+        var monitorEnumerator = new MonitorEnumerator();
+        var foregroundWindowDetector = new ForegroundWindowDetector();
+        var contentLuminanceSampler = new ContentLuminanceSampler();
+        var powerStatusProvider = new SystemPowerStatusProvider();
+        var contextUpdates = new LatestValueChannel<ComfortContextUpdate>();
 
-        _viewModel = new MainWindowViewModel(
-            settingsStore,
-            new MonitorEnumerator(),
-            new ForegroundWindowDetector(),
-            new ContentLuminanceSampler(),
+        _comfortSession = new ComfortSessionCoordinator(
+            new ConfigurationCoordinator(settingsStore),
+            new DisplayLifecycleCoordinator(monitorEnumerator),
+            new ComfortAutomationCoordinator(
+                foregroundWindowDetector,
+                contentLuminanceSampler,
+                brightnessController,
+                powerStatusProvider,
+                clock,
+                contextUpdates),
+            new FeedbackCoordinator(settingsStore, brightnessController, clock),
             brightnessController,
-            new SystemPowerStatusProvider(),
-            initialSettings)
+            clock,
+            new TimeProviderAdaptiveScheduler());
+        _viewModel = new MainWindowViewModel(_comfortSession, initialSettings)
         {
             StartWithWindows = _startupRegistration.IsEnabled()
         };
@@ -72,6 +87,7 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _comfortSession?.StopAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
         _trayIcon?.Dispose();
         _overlayController?.Dispose();
         _singleInstanceGuard?.Dispose();

@@ -138,6 +138,139 @@ public sealed class JsonSettingsStoreTests
         Assert.False(File.Exists(path));
         Assert.Single(Directory.EnumerateFiles(temp.Path, "settings.json.corrupt-*"));
     }
+
+    [Fact]
+    public async Task LoadAsyncImportsLegacyV3IntoV4EnvelopeWithoutDeletingLegacy()
+    {
+        using var temp = new TempDirectory();
+        var targetPath = Path.Combine(temp.Path, "Aptema", "config", "settings.json");
+        var legacyPath = Path.Combine(temp.Path, "LightPilot", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { ComfortIntensity = 37 }));
+        var store = new JsonSettingsStore(targetPath, legacyPath);
+
+        var settings = await store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal(37, settings.ComfortIntensity);
+        Assert.True(File.Exists(legacyPath));
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(targetPath));
+        Assert.Equal(4, document.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(37, document.RootElement.GetProperty("settings").GetProperty("comfortIntensity").GetInt32());
+        Assert.Equal("LightPilot", document.RootElement.GetProperty("migration").GetProperty("sourceProduct").GetString());
+    }
+
+    [Fact]
+    public async Task LegacyImportIsIdempotentOnceAptemaSettingsExist()
+    {
+        using var temp = new TempDirectory();
+        var targetPath = Path.Combine(temp.Path, "Aptema", "config", "settings.json");
+        var legacyPath = Path.Combine(temp.Path, "LightPilot", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { ComfortIntensity = 37 }));
+        var store = new JsonSettingsStore(targetPath, legacyPath);
+        await store.LoadAsync(CancellationToken.None);
+        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { ComfortIntensity = 88 }));
+
+        var settings = await new JsonSettingsStore(targetPath, legacyPath).LoadAsync(CancellationToken.None);
+
+        Assert.Equal(37, settings.ComfortIntensity);
+        Assert.True(File.Exists(legacyPath));
+    }
+
+    [Fact]
+    public async Task CorruptCurrentSettingsRecoverFromLastKnownGoodBackup()
+    {
+        using var temp = new TempDirectory();
+        var targetPath = Path.Combine(temp.Path, "Aptema", "config", "settings.json");
+        var store = new JsonSettingsStore(targetPath, legacySettingsPath: null);
+        await store.SaveAsync(UserSettings.Default with { ComfortIntensity = 31 }, CancellationToken.None);
+        await store.SaveAsync(UserSettings.Default with { ComfortIntensity = 62 }, CancellationToken.None);
+        await File.WriteAllTextAsync(targetPath, "{broken");
+
+        var recovered = await store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal(31, recovered.ComfortIntensity);
+        Assert.True(File.Exists(targetPath));
+        Assert.Single(Directory.EnumerateFiles(Path.GetDirectoryName(targetPath)!, "settings.json.corrupt-*"));
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(targetPath));
+        Assert.Equal(4, document.RootElement.GetProperty("schemaVersion").GetInt32());
+    }
+
+    [Fact]
+    public async Task SaveAsyncRotatesThreeLastKnownGoodBackupsAndLeavesNoTemporaryFile()
+    {
+        using var temp = new TempDirectory();
+        var targetPath = Path.Combine(temp.Path, "settings.json");
+        var store = new JsonSettingsStore(targetPath, legacySettingsPath: null);
+
+        foreach (var intensity in new[] { 10, 20, 30, 40, 50 })
+        {
+            await store.SaveAsync(UserSettings.Default with { ComfortIntensity = intensity }, CancellationToken.None);
+        }
+
+        Assert.True(File.Exists($"{targetPath}.lkg.1"));
+        Assert.True(File.Exists($"{targetPath}.lkg.2"));
+        Assert.True(File.Exists($"{targetPath}.lkg.3"));
+        Assert.False(File.Exists($"{targetPath}.tmp"));
+    }
+
+    [Fact]
+    public async Task FutureEnvelopeIsPreservedAndNotRewritten()
+    {
+        using var temp = new TempDirectory();
+        var path = Path.Combine(temp.Path, "settings.json");
+        const string future = """
+            {"schemaVersion":5,"settings":{"schemaVersion":3,"comfortIntensity":77},"futureField":"keep"}
+            """;
+        await File.WriteAllTextAsync(path, future);
+        var store = new JsonSettingsStore(path, legacySettingsPath: null);
+
+        var settings = await store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal(UserSettings.Default.ComfortIntensity, settings.ComfortIntensity);
+        Assert.Equal(UserSettings.Default.AutoEnabled, settings.AutoEnabled);
+        Assert.Equal(future, await File.ReadAllTextAsync(path));
+        Assert.Empty(Directory.EnumerateFiles(temp.Path, "settings.json.corrupt-*"));
+    }
+
+    [Fact]
+    public async Task V4EnvelopeWithoutSettingsIsQuarantined()
+    {
+        using var temp = new TempDirectory();
+        var path = Path.Combine(temp.Path, "settings.json");
+        await File.WriteAllTextAsync(path, "{\"schemaVersion\":4,\"savedAt\":\"2026-07-22T18:00:00Z\"}");
+        var store = new JsonSettingsStore(path, legacySettingsPath: null);
+
+        var settings = await store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal(UserSettings.Default.ComfortIntensity, settings.ComfortIntensity);
+        Assert.Equal(UserSettings.Default.AutoEnabled, settings.AutoEnabled);
+        Assert.False(File.Exists(path));
+        Assert.Single(Directory.EnumerateFiles(temp.Path, "settings.json.corrupt-*"));
+    }
+
+    [Fact]
+    public async Task CorruptAptemaConfigAndBackupRecoverFromLegacyWithProvenance()
+    {
+        using var temp = new TempDirectory();
+        var targetPath = Path.Combine(temp.Path, "Aptema", "config", "settings.json");
+        var legacyPath = Path.Combine(temp.Path, "LightPilot", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+        await File.WriteAllTextAsync(targetPath, "{broken");
+        await File.WriteAllTextAsync($"{targetPath}.lkg.1", "{also-broken");
+        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { ComfortIntensity = 39 }));
+        var store = new JsonSettingsStore(targetPath, legacyPath);
+
+        var settings = await store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal(39, settings.ComfortIntensity);
+        Assert.True(File.Exists(legacyPath));
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(targetPath));
+        var migration = document.RootElement.GetProperty("migration");
+        Assert.Equal("LegacyRecovery", migration.GetProperty("kind").GetString());
+        Assert.Equal("LightPilot", migration.GetProperty("sourceProduct").GetString());
+    }
 }
 
 internal sealed class TempDirectory : IDisposable
