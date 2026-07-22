@@ -132,3 +132,27 @@ public static class TrayNotificationPolicy
         && previous != current
         && (lastNotifiedAt is null || now - lastNotifiedAt >= Cooldown);
 }
+
+public sealed class TrayNotificationTracker
+{
+    private TrayNotificationIdentity? _lastIdentity;
+    private DateTimeOffset? _lastNotifiedAt;
+
+    public bool ShouldNotify(TrayNotificationIdentity current, DateTimeOffset now)
+    {
+        if (current.State == TrayIconState.Active)
+        {
+            _lastIdentity = null;
+            return false;
+        }
+
+        if (!TrayNotificationPolicy.ShouldNotify(_lastIdentity, current, _lastNotifiedAt, now))
+        {
+            return false;
+        }
+
+        _lastIdentity = current;
+        _lastNotifiedAt = now;
+        return true;
+    }
+}

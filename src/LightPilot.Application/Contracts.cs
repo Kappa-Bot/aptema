@@ -126,8 +126,10 @@ public sealed record FeedbackRequest(
 
 public sealed record FeedbackUndoRequest(
     UserSettings PreviousSettings,
+    UserSettings PostFeedbackSettings,
     IReadOnlyList<MonitorModel> Displays,
-    ComfortDecision PreviousDecision);
+    ComfortDecision PreviousDecision,
+    ComfortDecision PostFeedbackDecision);
 
 public sealed record FeedbackOutcome
 {

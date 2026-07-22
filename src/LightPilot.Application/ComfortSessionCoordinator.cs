@@ -171,7 +171,12 @@ public sealed class ComfortSessionCoordinator(
             Settings = outcome.Settings;
             _feedbackUndo = previousDecision is null
                 ? null
-                : new FeedbackUndoCheckpoint(previousSettings, previousDecision, clock.UtcNow.AddSeconds(10));
+                : new FeedbackUndoCheckpoint(
+                    previousSettings,
+                    outcome.Settings,
+                    previousDecision,
+                    outcome.Decision,
+                    clock.UtcNow.AddSeconds(10));
             var states = _displays.Select((display, index) => new DisplayRuntimeState(
                 display,
                 outcome.Decision,
@@ -206,26 +211,31 @@ public sealed class ComfortSessionCoordinator(
             }
 
             var result = await feedbackCoordinator.UndoAsync(
-                new FeedbackUndoRequest(checkpoint.Settings, _displays, checkpoint.Decision),
+                new FeedbackUndoRequest(
+                    checkpoint.PreviousSettings,
+                    checkpoint.PostFeedbackSettings,
+                    _displays,
+                    checkpoint.PreviousDecision,
+                    checkpoint.PostFeedbackDecision),
                 token).ConfigureAwait(false);
             if (!result.IsUsable)
             {
                 return OperationResult<ComfortRuntimeSnapshot>.Failure(result.Status, result.Code ?? "FeedbackUndoFailed");
             }
 
-            Settings = checkpoint.Settings;
+            Settings = checkpoint.PreviousSettings;
             _feedbackUndo = null;
             var outcome = result.Value!;
             var states = _displays.Select((display, index) => new DisplayRuntimeState(
                 display,
-                checkpoint.Decision,
+                checkpoint.PreviousDecision,
                 index < outcome.ApplyResults.Length ? outcome.ApplyResults[index] : BrightnessApplyResult.NoChange(display.Id)));
             CurrentSnapshot = new ComfortRuntimeSnapshot(
                 clock.UtcNow,
                 CurrentSnapshot.AppContext,
                 CurrentSnapshot.Content,
                 states,
-                checkpoint.Decision,
+                checkpoint.PreviousDecision,
                 _pauseUntil,
                 LearningSummary.From(Settings),
                 result.Status == OperationStatus.Degraded
@@ -361,5 +371,10 @@ public sealed class ComfortSessionCoordinator(
         }
     }
 
-    private sealed record FeedbackUndoCheckpoint(UserSettings Settings, ComfortDecision Decision, DateTimeOffset AvailableUntil);
+    private sealed record FeedbackUndoCheckpoint(
+        UserSettings PreviousSettings,
+        UserSettings PostFeedbackSettings,
+        ComfortDecision PreviousDecision,
+        ComfortDecision PostFeedbackDecision,
+        DateTimeOffset AvailableUntil);
 }

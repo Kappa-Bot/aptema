@@ -6,6 +6,7 @@ namespace LightPilot.Application.Tests;
 public sealed class CoordinatorTests
 {
     private static readonly MonitorModel Monitor = new("display-1", "Display 1", false, true, 15, 100, 0);
+    private static readonly MonitorModel SecondMonitor = new("display-2", "Display 2", false, true, 15, 100, 0);
 
     [Fact]
     public async Task DisplayLifecycleAppliesStoredMonitorOffset()
@@ -59,17 +60,17 @@ public sealed class CoordinatorTests
     }
 
     [Fact]
-    public async Task UndoDoesNotRestoreSettingsWhenVisibleOutputIsThrottled()
+    public async Task UndoRestoresPostFeedbackSettingsWhenVisibleOutputRemainsThrottled()
     {
         var store = new StubSettingsStore();
         var output = new FixedResultBrightnessController(new BrightnessApplyResult(
             Monitor.Id, BrightnessControlLayer.None, BrightnessControlLayer.None, MonitorControlState.Throttled, "WriteThrottled"));
         var coordinator = new FeedbackCoordinator(store, output, new FixedClock());
 
-        var result = await coordinator.UndoAsync(new FeedbackUndoRequest(UserSettings.Default, [Monitor], Decision()), CancellationToken.None);
+        var result = await coordinator.UndoAsync(UndoRequest([Monitor]), CancellationToken.None);
 
         Assert.Equal(OperationStatus.Unavailable, result.Status);
-        Assert.Null(store.Saved);
+        Assert.Equal(70, store.Saved!.ComfortIntensity);
     }
 
     [Fact]
@@ -79,11 +80,85 @@ public sealed class CoordinatorTests
         var output = new UndoFallbackBrightnessController();
         var coordinator = new FeedbackCoordinator(store, output, new FixedClock());
 
-        var result = await coordinator.UndoAsync(new FeedbackUndoRequest(UserSettings.Default, [Monitor], Decision()), CancellationToken.None);
+        var result = await coordinator.UndoAsync(UndoRequest([Monitor]), CancellationToken.None);
 
         Assert.True(result.IsUsable);
         Assert.Equal(1, output.FallbackCalls);
         Assert.NotNull(store.Saved);
+    }
+
+    [Fact]
+    public async Task UndoCompensatesRestoredDisplaysAndSettingsAfterPartialDisplayFailure()
+    {
+        var previousSettings = UserSettings.Default;
+        var postSettings = previousSettings with { ComfortIntensity = 70 };
+        var previousDecision = Decision(55);
+        var postDecision = Decision(49);
+        var store = new TransactionalSettingsStore(postSettings);
+        var output = new TransactionalBrightnessController(
+            [Monitor, SecondMonitor],
+            postDecision,
+            failPreviousOnMonitor: SecondMonitor.Id);
+        var coordinator = new FeedbackCoordinator(store, output, new FixedClock());
+
+        var result = await coordinator.UndoAsync(
+            new FeedbackUndoRequest(previousSettings, postSettings, [Monitor, SecondMonitor], previousDecision, postDecision),
+            CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Unavailable, result.Status);
+        Assert.Equal("FeedbackUndoCompensated", result.Code);
+        Assert.Equal(postSettings, store.Persisted);
+        Assert.Equal([previousSettings, postSettings], store.SuccessfulSaves);
+        Assert.All(output.VisibleDecisions.Values, decision => Assert.Equal(postDecision, decision));
+        Assert.Equal(
+            [(Monitor.Id, 55), (SecondMonitor.Id, 55), (Monitor.Id, 49)],
+            output.Calls.Select(call => (call.MonitorId, call.Decision.TargetBrightnessPercent)));
+    }
+
+    [Fact]
+    public async Task UndoDoesNotTouchDisplaysWhenPreviousSettingsCannotBePersisted()
+    {
+        var previousSettings = UserSettings.Default;
+        var postSettings = previousSettings with { ComfortIntensity = 70 };
+        var postDecision = Decision(49);
+        var store = new TransactionalSettingsStore(postSettings, failOnSaveCall: 1);
+        var output = new TransactionalBrightnessController([Monitor, SecondMonitor], postDecision);
+        var coordinator = new FeedbackCoordinator(store, output, new FixedClock());
+
+        var result = await coordinator.UndoAsync(
+            new FeedbackUndoRequest(previousSettings, postSettings, [Monitor, SecondMonitor], Decision(55), postDecision),
+            CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Unavailable, result.Status);
+        Assert.Equal("FeedbackUndoPersistenceUnavailable", result.Code);
+        Assert.Equal(postSettings, store.Persisted);
+        Assert.Empty(output.Calls);
+        Assert.All(output.VisibleDecisions.Values, decision => Assert.Equal(postDecision, decision));
+    }
+
+    [Fact]
+    public async Task UndoReportsDegradedWhenDisplayCompensationFails()
+    {
+        var previousSettings = UserSettings.Default;
+        var postSettings = previousSettings with { ComfortIntensity = 70 };
+        var previousDecision = Decision(55);
+        var postDecision = Decision(49);
+        var store = new TransactionalSettingsStore(postSettings);
+        var output = new TransactionalBrightnessController(
+            [Monitor, SecondMonitor],
+            postDecision,
+            failPreviousOnMonitor: SecondMonitor.Id,
+            failPostOnMonitor: Monitor.Id);
+        var coordinator = new FeedbackCoordinator(store, output, new FixedClock());
+
+        var result = await coordinator.UndoAsync(
+            new FeedbackUndoRequest(previousSettings, postSettings, [Monitor, SecondMonitor], previousDecision, postDecision),
+            CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Degraded, result.Status);
+        Assert.Equal("FeedbackUndoCompensationFailed", result.Code);
+        Assert.False(result.IsUsable);
+        Assert.Equal(postSettings, store.Persisted);
     }
 
     [Fact]
@@ -241,8 +316,77 @@ public sealed class CoordinatorTests
         }
     }
 
-    private static ComfortDecision Decision() => new(
-        ComfortProfileId.Evening, 55, 4800, 0.08, TimeSpan.FromSeconds(45), true, "test", []);
+    private static FeedbackUndoRequest UndoRequest(IReadOnlyList<MonitorModel> displays)
+    {
+        var postSettings = UserSettings.Default with { ComfortIntensity = 70 };
+        return new FeedbackUndoRequest(UserSettings.Default, postSettings, displays, Decision(55), Decision(49));
+    }
+
+    private static ComfortDecision Decision(int brightness = 55) => new(
+        ComfortProfileId.Evening, brightness, 4800, 0.08, TimeSpan.FromSeconds(45), true, "test", []);
+
+    private sealed class TransactionalSettingsStore(UserSettings initial, int? failOnSaveCall = null) : ISettingsStore
+    {
+        private int _saveCalls;
+        public UserSettings Persisted { get; private set; } = initial;
+        public List<UserSettings> SuccessfulSaves { get; } = [];
+
+        public ValueTask<UserSettings> LoadAsync(CancellationToken cancellationToken) => ValueTask.FromResult(Persisted);
+
+        public ValueTask SaveAsync(UserSettings settings, CancellationToken cancellationToken)
+        {
+            _saveCalls++;
+            if (_saveCalls == failOnSaveCall)
+            {
+                throw new IOException("settings unavailable");
+            }
+
+            Persisted = settings;
+            SuccessfulSaves.Add(settings);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class TransactionalBrightnessController(
+        IReadOnlyList<MonitorModel> monitors,
+        ComfortDecision initialDecision,
+        string? failPreviousOnMonitor = null,
+        string? failPostOnMonitor = null) : IBrightnessController
+    {
+        public Dictionary<string, ComfortDecision> VisibleDecisions { get; } =
+            monitors.ToDictionary(monitor => monitor.Id, _ => initialDecision, StringComparer.OrdinalIgnoreCase);
+        public List<(string MonitorId, ComfortDecision Decision)> Calls { get; } = [];
+
+        public ValueTask<BrightnessApplyResult> ApplyAsync(
+            MonitorModel monitor,
+            ComfortDecision decision,
+            UserSettings settings,
+            CancellationToken cancellationToken)
+        {
+            Calls.Add((monitor.Id, decision));
+            var shouldFail =
+                (decision.TargetBrightnessPercent == 55 && monitor.Id == failPreviousOnMonitor) ||
+                (decision.TargetBrightnessPercent == 49 && monitor.Id == failPostOnMonitor);
+            if (shouldFail)
+            {
+                return ValueTask.FromResult(new BrightnessApplyResult(
+                    monitor.Id,
+                    BrightnessControlLayer.Overlay,
+                    BrightnessControlLayer.None,
+                    MonitorControlState.Failed,
+                    "ApplyFailed"));
+            }
+
+            VisibleDecisions[monitor.Id] = decision;
+            return ValueTask.FromResult(new BrightnessApplyResult(
+                monitor.Id,
+                BrightnessControlLayer.Overlay,
+                BrightnessControlLayer.Overlay,
+                MonitorControlState.Ready,
+                "Applied",
+                UsedOverlay: true));
+        }
+    }
 
     private sealed class StubForegroundDetector(AppContextModel context) : IForegroundWindowDetector
     {

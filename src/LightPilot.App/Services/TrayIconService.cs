@@ -19,9 +19,7 @@ public sealed class TrayIconService : IDisposable
     private readonly TrayFlyoutWindow _flyout;
     private readonly OsdWindow _osd = new();
     private readonly HotkeyHost _hotkeyHost = new();
-    private TrayIconState? _lastIconState;
-    private TrayNotificationIdentity? _lastNotificationIdentity;
-    private DateTimeOffset? _lastNotifiedAt;
+    private readonly TrayNotificationTracker _notificationTracker = new();
     private bool _disposed;
 
     public TrayIconService(MainWindowViewModel viewModel, Window window)
@@ -133,14 +131,10 @@ public sealed class TrayIconService : IDisposable
         _notifyIcon.Text = TrayMenuModelBuilder.BuildTooltip(state);
         _notifyIcon.Icon = _icons[iconState];
         var now = DateTimeOffset.UtcNow;
-        if (notifySignificantChange && TrayNotificationPolicy.ShouldNotify(_lastNotificationIdentity, identity, _lastNotifiedAt, now))
+        if (notifySignificantChange && _notificationTracker.ShouldNotify(identity, now))
         {
             NotifyStateChange(iconState);
-            _lastNotificationIdentity = identity;
-            _lastNotifiedAt = now;
         }
-
-        _lastIconState = iconState;
     }
 
     private TrayMenuState BuildState() => new(

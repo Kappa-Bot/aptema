@@ -66,39 +66,85 @@ public sealed class FeedbackCoordinator(
 
     public async ValueTask<OperationResult<FeedbackOutcome>> UndoAsync(FeedbackUndoRequest request, CancellationToken cancellationToken)
     {
+        if (!await TrySaveSettingsAsync(request.PreviousSettings, cancellationToken).ConfigureAwait(false))
+        {
+            return OperationResult<FeedbackOutcome>.Failure(OperationStatus.Unavailable, "FeedbackUndoPersistenceUnavailable");
+        }
+
         var results = new List<BrightnessApplyResult>();
+        var restoredDisplays = new List<MonitorModel>();
         foreach (var display in request.Displays)
         {
-            BrightnessApplyResult result;
-            try
-            {
-                result = await brightnessController.ApplyAsync(display, request.PreviousDecision, request.PreviousSettings, cancellationToken).ConfigureAwait(false);
-                if (!IsVisibleApply(result) && result.State != MonitorControlState.Disabled && brightnessController is IUndoBrightnessController undoController)
-                {
-                    result = await undoController.ApplyUndoAsync(
-                        display, request.PreviousDecision, request.PreviousSettings, result.SuppressedUntil, cancellationToken).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception)
-            {
-                result = new BrightnessApplyResult(display.Id, BrightnessControlLayer.None, BrightnessControlLayer.None, MonitorControlState.Failed, "ApplyFailed");
-            }
-
+            var result = await ApplyTargetAsync(
+                display,
+                request.PreviousDecision,
+                request.PreviousSettings,
+                cancellationToken).ConfigureAwait(false);
             results.Add(result);
+            if (!IsConsistentApply(result))
+            {
+                return await RestorePostFeedbackStateAsync(request, restoredDisplays, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (result.State != MonitorControlState.Disabled)
+            {
+                restoredDisplays.Add(display);
+            }
         }
 
-        if (request.Displays.Count == 0 || results.Any(result => result.State != MonitorControlState.Disabled && !IsVisibleApply(result)))
+        var outcome = new FeedbackOutcome(request.PreviousSettings, request.PreviousDecision, results);
+        return OperationResult<FeedbackOutcome>.Succeeded(outcome);
+    }
+
+    private async ValueTask<OperationResult<FeedbackOutcome>> RestorePostFeedbackStateAsync(
+        FeedbackUndoRequest request,
+        IReadOnlyList<MonitorModel> restoredDisplays,
+        CancellationToken cancellationToken)
+    {
+        var settingsRestored = await TrySaveSettingsAsync(request.PostFeedbackSettings, cancellationToken).ConfigureAwait(false);
+        var compensationFailed = false;
+        foreach (var display in restoredDisplays)
         {
-            return OperationResult<FeedbackOutcome>.Failure(OperationStatus.Unavailable, "FeedbackUndoNotVisible");
+            var result = await ApplyTargetAsync(
+                display,
+                request.PostFeedbackDecision,
+                request.PostFeedbackSettings,
+                cancellationToken).ConfigureAwait(false);
+            compensationFailed |= !IsConsistentApply(result);
         }
 
+        if (compensationFailed)
+        {
+            return OperationResult<FeedbackOutcome>.Failure(OperationStatus.Degraded, "FeedbackUndoCompensationFailed");
+        }
+
+        return settingsRestored
+            ? OperationResult<FeedbackOutcome>.Failure(OperationStatus.Unavailable, "FeedbackUndoCompensated")
+            : OperationResult<FeedbackOutcome>.Failure(OperationStatus.Degraded, "FeedbackUndoRollbackPersistenceFailed");
+    }
+
+    private async ValueTask<BrightnessApplyResult> ApplyTargetAsync(
+        MonitorModel display,
+        ComfortDecision decision,
+        UserSettings settings,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            await settingsStore.SaveAsync(request.PreviousSettings, cancellationToken).ConfigureAwait(false);
+            var result = await brightnessController.ApplyAsync(display, decision, settings, cancellationToken).ConfigureAwait(false);
+            if (!IsConsistentApply(result) &&
+                result.State != MonitorControlState.Disabled &&
+                brightnessController is IUndoBrightnessController undoController)
+            {
+                result = await undoController.ApplyUndoAsync(
+                    display,
+                    decision,
+                    settings,
+                    result.SuppressedUntil,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -106,13 +152,34 @@ public sealed class FeedbackCoordinator(
         }
         catch (Exception)
         {
-            return OperationResult<FeedbackOutcome>.Failure(OperationStatus.Unavailable, "FeedbackUndoSettingsUnavailable");
+            return new BrightnessApplyResult(
+                display.Id,
+                BrightnessControlLayer.None,
+                BrightnessControlLayer.None,
+                MonitorControlState.Failed,
+                "ApplyFailed");
         }
-
-        var outcome = new FeedbackOutcome(request.PreviousSettings, request.PreviousDecision, results);
-        return OperationResult<FeedbackOutcome>.Succeeded(outcome);
     }
 
-    private static bool IsVisibleApply(BrightnessApplyResult result) =>
-        result.UsedHardware || result.UsedOverlay;
+    private async ValueTask<bool> TrySaveSettingsAsync(UserSettings settings, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await settingsStore.SaveAsync(settings, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsConsistentApply(BrightnessApplyResult result) =>
+        result.State == MonitorControlState.Disabled ||
+        result.State is MonitorControlState.Ready or MonitorControlState.FallbackUsed or MonitorControlState.Degraded &&
+        (result.UsedHardware || result.UsedOverlay);
 }

@@ -92,11 +92,32 @@ public sealed class ComfortSessionCoordinatorTests
         await fixture.Session.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task FailedUndoPersistenceLeavesPostFeedbackSnapshotAndOutputUntouched()
+    {
+        var store = new StubSettingsStore(failOnSaveCall: 2);
+        var fixture = new SessionFixture(store);
+        await fixture.Session.StartAsync(UserSettings.Default, CancellationToken.None);
+        await fixture.Session.ApplyFeedbackAsync(ComfortFeedback.TooBright, CancellationToken.None);
+        var postFeedbackSnapshot = fixture.Session.CurrentSnapshot;
+        var postFeedbackSettings = fixture.Session.Settings;
+        var writes = fixture.Output.Applied.Count;
+
+        var result = await fixture.Session.UndoFeedbackAsync(CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Unavailable, result.Status);
+        Assert.Same(postFeedbackSnapshot, fixture.Session.CurrentSnapshot);
+        Assert.Equal(postFeedbackSettings, fixture.Session.Settings);
+        Assert.Equal(postFeedbackSettings, store.Persisted);
+        Assert.Equal(writes, fixture.Output.Applied.Count);
+        await fixture.Session.StopAsync(CancellationToken.None);
+    }
+
     private sealed class SessionFixture
     {
-        public SessionFixture()
+        public SessionFixture(StubSettingsStore? store = null)
         {
-            var store = new StubSettingsStore();
+            store ??= new StubSettingsStore();
             Output = new RecordingBrightnessController();
             Clock = new FixedClock();
             Scheduler = new ManualAdaptiveScheduler();
@@ -142,10 +163,23 @@ public sealed class ComfortSessionCoordinatorTests
         public void Tick() => _ticks.Writer.TryWrite(true);
     }
 
-    private sealed class StubSettingsStore : ISettingsStore
+    private sealed class StubSettingsStore(int? failOnSaveCall = null) : ISettingsStore
     {
-        public ValueTask<UserSettings> LoadAsync(CancellationToken cancellationToken) => ValueTask.FromResult(UserSettings.Default);
-        public ValueTask SaveAsync(UserSettings settings, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        private int _saveCalls;
+        public UserSettings Persisted { get; private set; } = UserSettings.Default;
+
+        public ValueTask<UserSettings> LoadAsync(CancellationToken cancellationToken) => ValueTask.FromResult(Persisted);
+        public ValueTask SaveAsync(UserSettings settings, CancellationToken cancellationToken)
+        {
+            _saveCalls++;
+            if (_saveCalls == failOnSaveCall)
+            {
+                throw new IOException("settings unavailable");
+            }
+
+            Persisted = settings;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class StubMonitorEnumerator : IMonitorEnumerator

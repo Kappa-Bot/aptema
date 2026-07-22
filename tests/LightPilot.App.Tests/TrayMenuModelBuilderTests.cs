@@ -101,6 +101,21 @@ public sealed class TrayMenuModelBuilderTests
     }
 
     [Fact]
+    public void RecoveredIncidentCanNotifyAgainAfterCooldownWithoutOscillationSpam()
+    {
+        var tracker = new TrayNotificationTracker();
+        var started = new DateTimeOffset(2026, 7, 22, 12, 0, 0, TimeSpan.Zero);
+        var degraded = new TrayNotificationIdentity(TrayIconState.Degraded, "display-1:ddc");
+        var active = new TrayNotificationIdentity(TrayIconState.Active, string.Empty);
+
+        Assert.True(tracker.ShouldNotify(degraded, started));
+        Assert.False(tracker.ShouldNotify(active, started.AddSeconds(20)));
+        Assert.False(tracker.ShouldNotify(degraded, started.AddSeconds(40)));
+        Assert.False(tracker.ShouldNotify(active, started.AddMinutes(2.5)));
+        Assert.True(tracker.ShouldNotify(degraded, started.AddMinutes(3)));
+    }
+
+    [Fact]
     public void ShortcutConflictAddsHumanHelpAction()
     {
         var items = TrayMenuModelBuilder.Build(new TrayMenuState(true, false, "Comfortable", "Day", "Soon", ShortcutAvailable: false));
