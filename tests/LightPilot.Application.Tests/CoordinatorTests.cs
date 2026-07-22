@@ -60,7 +60,7 @@ public sealed class CoordinatorTests
     }
 
     [Fact]
-    public async Task UndoRestoresPostFeedbackSettingsWhenVisibleOutputRemainsThrottled()
+    public async Task UndoReportsDegradedWhenThrottledDisplayCannotBeCompensated()
     {
         var store = new StubSettingsStore();
         var output = new FixedResultBrightnessController(new BrightnessApplyResult(
@@ -69,7 +69,8 @@ public sealed class CoordinatorTests
 
         var result = await coordinator.UndoAsync(UndoRequest([Monitor]), CancellationToken.None);
 
-        Assert.Equal(OperationStatus.Unavailable, result.Status);
+        Assert.Equal(OperationStatus.Degraded, result.Status);
+        Assert.Equal("FeedbackUndoCompensationFailed", result.Code);
         Assert.Equal(70, store.Saved!.ComfortIntensity);
     }
 
@@ -111,7 +112,34 @@ public sealed class CoordinatorTests
         Assert.Equal([previousSettings, postSettings], store.SuccessfulSaves);
         Assert.All(output.VisibleDecisions.Values, decision => Assert.Equal(postDecision, decision));
         Assert.Equal(
-            [(Monitor.Id, 55), (SecondMonitor.Id, 55), (Monitor.Id, 49)],
+            [(Monitor.Id, 55), (SecondMonitor.Id, 55), (Monitor.Id, 49), (SecondMonitor.Id, 49)],
+            output.Calls.Select(call => (call.MonitorId, call.Decision.TargetBrightnessPercent)));
+    }
+
+    [Fact]
+    public async Task UndoCompensatesCurrentDisplayWhenFailedResultFollowsVisibleSideEffect()
+    {
+        var previousSettings = UserSettings.Default;
+        var postSettings = previousSettings with { ComfortIntensity = 70 };
+        var previousDecision = Decision(55);
+        var postDecision = Decision(49);
+        var store = new TransactionalSettingsStore(postSettings);
+        var output = new TransactionalBrightnessController(
+            [Monitor, SecondMonitor],
+            postDecision,
+            failPreviousAfterApplyOnMonitor: SecondMonitor.Id);
+        var coordinator = new FeedbackCoordinator(store, output, new FixedClock());
+
+        var result = await coordinator.UndoAsync(
+            new FeedbackUndoRequest(previousSettings, postSettings, [Monitor, SecondMonitor], previousDecision, postDecision),
+            CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Unavailable, result.Status);
+        Assert.Equal("FeedbackUndoCompensated", result.Code);
+        Assert.Equal(postSettings, store.Persisted);
+        Assert.All(output.VisibleDecisions.Values, decision => Assert.Equal(postDecision, decision));
+        Assert.Equal(
+            [(Monitor.Id, 55), (SecondMonitor.Id, 55), (Monitor.Id, 49), (SecondMonitor.Id, 49)],
             output.Calls.Select(call => (call.MonitorId, call.Decision.TargetBrightnessPercent)));
     }
 
@@ -351,7 +379,8 @@ public sealed class CoordinatorTests
         IReadOnlyList<MonitorModel> monitors,
         ComfortDecision initialDecision,
         string? failPreviousOnMonitor = null,
-        string? failPostOnMonitor = null) : IBrightnessController
+        string? failPostOnMonitor = null,
+        string? failPreviousAfterApplyOnMonitor = null) : IBrightnessController
     {
         public Dictionary<string, ComfortDecision> VisibleDecisions { get; } =
             monitors.ToDictionary(monitor => monitor.Id, _ => initialDecision, StringComparer.OrdinalIgnoreCase);
@@ -367,7 +396,14 @@ public sealed class CoordinatorTests
             var shouldFail =
                 (decision.TargetBrightnessPercent == 55 && monitor.Id == failPreviousOnMonitor) ||
                 (decision.TargetBrightnessPercent == 49 && monitor.Id == failPostOnMonitor);
-            if (shouldFail)
+            var shouldFailAfterApply =
+                decision.TargetBrightnessPercent == 55 && monitor.Id == failPreviousAfterApplyOnMonitor;
+            if (shouldFailAfterApply)
+            {
+                VisibleDecisions[monitor.Id] = decision;
+            }
+
+            if (shouldFail || shouldFailAfterApply)
             {
                 return ValueTask.FromResult(new BrightnessApplyResult(
                     monitor.Id,

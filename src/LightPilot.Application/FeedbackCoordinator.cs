@@ -72,9 +72,10 @@ public sealed class FeedbackCoordinator(
         }
 
         var results = new List<BrightnessApplyResult>();
-        var restoredDisplays = new List<MonitorModel>();
+        var attemptedDisplays = new List<MonitorModel>();
         foreach (var display in request.Displays)
         {
+            attemptedDisplays.Add(display);
             var result = await ApplyTargetAsync(
                 display,
                 request.PreviousDecision,
@@ -83,12 +84,7 @@ public sealed class FeedbackCoordinator(
             results.Add(result);
             if (!IsConsistentApply(result))
             {
-                return await RestorePostFeedbackStateAsync(request, restoredDisplays, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (result.State != MonitorControlState.Disabled)
-            {
-                restoredDisplays.Add(display);
+                return await RestorePostFeedbackStateAsync(request, attemptedDisplays, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -98,12 +94,12 @@ public sealed class FeedbackCoordinator(
 
     private async ValueTask<OperationResult<FeedbackOutcome>> RestorePostFeedbackStateAsync(
         FeedbackUndoRequest request,
-        IReadOnlyList<MonitorModel> restoredDisplays,
+        IReadOnlyList<MonitorModel> attemptedDisplays,
         CancellationToken cancellationToken)
     {
         var settingsRestored = await TrySaveSettingsAsync(request.PostFeedbackSettings, cancellationToken).ConfigureAwait(false);
         var compensationFailed = false;
-        foreach (var display in restoredDisplays)
+        foreach (var display in attemptedDisplays)
         {
             var result = await ApplyTargetAsync(
                 display,
