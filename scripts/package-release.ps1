@@ -39,8 +39,13 @@ Write-Host $zipPath
 if ($BuildInstaller) {
     $iscc = Get-Command "iscc.exe" -ErrorAction SilentlyContinue
     if ($null -eq $iscc) {
-        $defaultInno = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-        if (Test-Path -LiteralPath $defaultInno) {
+        $innoCandidates = @(
+            "${env:LOCALAPPDATA}\Programs\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+        )
+        $defaultInno = $innoCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        if ($null -ne $defaultInno) {
             $iscc = [pscustomobject]@{ Source = $defaultInno }
         }
     }

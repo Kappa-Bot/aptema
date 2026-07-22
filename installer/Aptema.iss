@@ -28,8 +28,8 @@ SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=..\src\Aptema.App\Assets\Aptema.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 
 [Files]
 Source: "{#MySourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -45,4 +45,4 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--background"; Description: "Start Aptema"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-Filename: "taskkill"; Parameters: "/IM {#MyAppExeName} /F"; Flags: runhidden
+Filename: "taskkill"; Parameters: "/IM {#MyAppExeName} /F"; Flags: runhidden; RunOnceId: "StopAptema"
