@@ -34,7 +34,7 @@ jobs:
         run: |
           $tag = "${env:GITHUB_REF_NAME}"
           $notes = "docs\RELEASE_NOTES_$tag.md"
-          $assets = Get-ChildItem artifacts -File | Where-Object { $_.Name -match '\.(zip|exe)$' } | ForEach-Object { $_.FullName }
+          $assets = Get-ChildItem artifacts -File | Where-Object { $_.Name -match '(\.zip|\.exe|\.manifest\.json)$' } | ForEach-Object { $_.FullName }
           if (Test-Path $notes) {
             gh release create $tag $assets --title "Aptema $tag" --notes-file $notes
           } else {
