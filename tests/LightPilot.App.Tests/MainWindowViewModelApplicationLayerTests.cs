@@ -24,7 +24,11 @@ public sealed class MainWindowViewModelApplicationLayerTests
 
     private sealed class StubComfortSession : IComfortSession
     {
-        public event Action<ComfortRuntimeSnapshot>? SnapshotChanged;
+        event Action<ComfortRuntimeSnapshot>? IComfortSession.SnapshotChanged
+        {
+            add { }
+            remove { }
+        }
         public UserSettings Settings { get; private set; } = UserSettings.Default;
         public ComfortRuntimeSnapshot CurrentSnapshot { get; private set; } = ComfortRuntimeSnapshot.Empty(DateTimeOffset.UtcNow);
         public TimeSpan? LastPauseDuration { get; private set; }

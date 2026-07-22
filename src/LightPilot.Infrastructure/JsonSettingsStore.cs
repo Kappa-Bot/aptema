@@ -20,6 +20,7 @@ public sealed class JsonSettingsStore : ISettingsStore
     private readonly string? _legacySettingsPath;
     private readonly IClock _clock;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private int? _unsupportedEnvelopeSchemaVersion;
 
     public JsonSettingsStore()
         : this(
@@ -50,11 +51,13 @@ public sealed class JsonSettingsStore : ISettingsStore
                 var current = await TryReadSettingsAsync(_settingsPath, cancellationToken).ConfigureAwait(false);
                 if (current?.Kind == SettingsDocumentKind.UnsupportedEnvelope)
                 {
+                    _unsupportedEnvelopeSchemaVersion = current.DocumentSchemaVersion;
                     return UserSettings.Default;
                 }
 
                 if (current is { Settings: not null } && current.Kind is SettingsDocumentKind.Envelope or SettingsDocumentKind.FlatLegacy)
                 {
+                    _unsupportedEnvelopeSchemaVersion = null;
                     var normalized = Normalize(current.Settings);
                     if (current.Kind == SettingsDocumentKind.FlatLegacy)
                     {
@@ -95,6 +98,20 @@ public sealed class JsonSettingsStore : ISettingsStore
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_unsupportedEnvelopeSchemaVersion is null && File.Exists(_settingsPath))
+            {
+                var current = await TryReadSettingsAsync(_settingsPath, cancellationToken).ConfigureAwait(false);
+                if (current?.Kind == SettingsDocumentKind.UnsupportedEnvelope)
+                {
+                    _unsupportedEnvelopeSchemaVersion = current.DocumentSchemaVersion;
+                }
+            }
+
+            if (_unsupportedEnvelopeSchemaVersion is { } schemaVersion)
+            {
+                throw new UnsupportedSettingsEnvelopeException(schemaVersion);
+            }
+
             await SaveEnvelopeAsync(Normalize(settings), migration: null, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -158,7 +175,7 @@ public sealed class JsonSettingsStore : ISettingsStore
 
             if (schemaVersion > CurrentEnvelopeSchemaVersion)
             {
-                return SettingsReadResult.Unsupported;
+                return new SettingsReadResult(SettingsDocumentKind.UnsupportedEnvelope, null, schemaVersion);
             }
 
             if (schemaVersion == CurrentEnvelopeSchemaVersion)
@@ -171,7 +188,7 @@ public sealed class JsonSettingsStore : ISettingsStore
                 var settings = settingsElement.Deserialize<UserSettings>(Options);
                 return settings is null
                     ? SettingsReadResult.Malformed
-                    : new SettingsReadResult(SettingsDocumentKind.Envelope, settings);
+                    : new SettingsReadResult(SettingsDocumentKind.Envelope, settings, schemaVersion);
             }
 
             if (schemaVersion is >= 1 and <= 3 && !TryGetProperty(root, "settings", out _))
@@ -179,7 +196,7 @@ public sealed class JsonSettingsStore : ISettingsStore
                 var legacy = root.Deserialize<UserSettings>(Options);
                 return legacy is null
                     ? SettingsReadResult.Malformed
-                    : new SettingsReadResult(SettingsDocumentKind.FlatLegacy, legacy);
+                    : new SettingsReadResult(SettingsDocumentKind.FlatLegacy, legacy, schemaVersion);
             }
 
             return SettingsReadResult.Malformed;
@@ -321,11 +338,16 @@ public sealed class JsonSettingsStore : ISettingsStore
         Malformed
     }
 
-    private sealed record SettingsReadResult(SettingsDocumentKind Kind, UserSettings? Settings)
+    private sealed record SettingsReadResult(SettingsDocumentKind Kind, UserSettings? Settings, int? DocumentSchemaVersion)
     {
-        public static SettingsReadResult Unsupported { get; } = new(SettingsDocumentKind.UnsupportedEnvelope, null);
-        public static SettingsReadResult Malformed { get; } = new(SettingsDocumentKind.Malformed, null);
+        public static SettingsReadResult Malformed { get; } = new(SettingsDocumentKind.Malformed, null, null);
     }
+}
+
+public sealed class UnsupportedSettingsEnvelopeException(int schemaVersion)
+    : IOException($"Aptema settings schema {schemaVersion} is newer than supported schema {JsonSettingsStore.CurrentEnvelopeSchemaVersion}.")
+{
+    public int SchemaVersion { get; } = schemaVersion;
 }
 
 public sealed record SettingsEnvelope(

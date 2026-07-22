@@ -234,6 +234,26 @@ public sealed class JsonSettingsStoreTests
     }
 
     [Fact]
+    public async Task SaveAfterLoadingFutureEnvelopeRefusesAndPreservesOriginalFile()
+    {
+        using var temp = new TempDirectory();
+        var path = Path.Combine(temp.Path, "settings.json");
+        const string future = """
+            {"schemaVersion":5,"settings":{"schemaVersion":3,"comfortIntensity":77},"futureField":"keep"}
+            """;
+        await File.WriteAllTextAsync(path, future);
+        var store = new JsonSettingsStore(path, legacySettingsPath: null);
+        await store.LoadAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<UnsupportedSettingsEnvelopeException>(async () =>
+            await store.SaveAsync(UserSettings.Default with { ComfortIntensity = 20 }, CancellationToken.None));
+
+        Assert.Equal(5, exception.SchemaVersion);
+        Assert.IsAssignableFrom<IOException>(exception);
+        Assert.Equal(future, await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
     public async Task V4EnvelopeWithoutSettingsIsQuarantined()
     {
         using var temp = new TempDirectory();
