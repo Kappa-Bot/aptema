@@ -45,6 +45,7 @@ public partial class App : System.Windows.Application
         var safeMode = e.Args.Any(arg => string.Equals(arg, "--safe-mode", StringComparison.OrdinalIgnoreCase)) ||
             initialSettings.SafeModeEnabled || startupHealth.ShouldStartSafeMode;
         var background = e.Args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
+        var smokeTest = e.Args.Any(arg => string.Equals(arg, "--smoke-test", StringComparison.OrdinalIgnoreCase));
         IOverlayController overlayController;
         if (safeMode)
         {
@@ -115,6 +116,7 @@ public partial class App : System.Windows.Application
         }
 
         _ = MarkStartupHealthyAfterDelayAsync();
+        if (smokeTest) _ = ExitSmokeTestAsync();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -132,6 +134,12 @@ public partial class App : System.Windows.Application
     {
         await Task.Delay(TimeSpan.FromSeconds(10));
         _startupHealthGuard?.MarkHealthy();
+    }
+
+    private async Task ExitSmokeTestAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        await Dispatcher.InvokeAsync(ExitApplication);
     }
 
     private void SystemParameters_StaticPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
