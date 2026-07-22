@@ -29,10 +29,12 @@ public sealed class MainWindowViewModel : ObservableObject
     private string _decisionSourceText = "Aptema default";
     private string _decisionConfidenceText = "Building confidence";
     private string _decisionRuleText = "No personal rule needed";
+    private readonly bool _isSafeMode;
 
-    public MainWindowViewModel(IComfortSession session, UserSettings? initialSettings = null)
+    public MainWindowViewModel(IComfortSession session, UserSettings? initialSettings = null, bool isSafeMode = false)
     {
         _session = session;
+        _isSafeMode = isSafeMode;
         _settings = initialSettings ?? session.Settings;
         _runtimeSnapshot = session.CurrentSnapshot;
         _session.SnapshotChanged += OnSnapshotChanged;
@@ -85,6 +87,7 @@ public sealed class MainWindowViewModel : ObservableObject
         });
         SavePersonalizationCommand = new RelayCommand(SavePersonalization);
         CancelPersonalizationCommand = new RelayCommand(CancelPersonalization);
+        CreateSupportBundleCommand = new RelayCommand(() => RequestSupportBundle?.Invoke(this, EventArgs.Empty));
         ExitCommand = new RelayCommand(() => RequestExit?.Invoke(this, EventArgs.Empty));
 
         ProjectSnapshot(_runtimeSnapshot);
@@ -97,6 +100,7 @@ public sealed class MainWindowViewModel : ObservableObject
     public event EventHandler<FeedbackPresentationEventArgs>? FeedbackApplied;
     public event EventHandler<MonitorModel>? RequestIdentifyDisplay;
     public event EventHandler<MonitorModel>? RequestTestDisplay;
+    public event EventHandler? RequestSupportBundle;
 
     public ObservableCollection<MonitorStatusViewModel> Monitors { get; }
 
@@ -130,6 +134,7 @@ public sealed class MainWindowViewModel : ObservableObject
     public RelayCommand TestDisplayCommand { get; }
     public RelayCommand SavePersonalizationCommand { get; }
     public RelayCommand CancelPersonalizationCommand { get; }
+    public RelayCommand CreateSupportBundleCommand { get; }
     public RelayCommand ExitCommand { get; }
 
     public UserSettings Settings => _settings;
@@ -272,6 +277,13 @@ public sealed class MainWindowViewModel : ObservableObject
         ? "Quick Adjust shortcut: Win+Alt+A"
         : "Win+Alt+A is already used by another app. Open Adjust from the tray or change that app's shortcut.";
     public string ActiveApplicationText => ApplicationDisplayNamePolicy.GetDisplayName(RuntimeSnapshot.AppContext.ProcessName);
+    public bool IsSafeMode => _isSafeMode;
+    public string SafeModeStatusText => _isSafeMode
+        ? "Recovery mode is active. Screen controls, analysis and shortcuts are off until the next healthy restart."
+        : "All protection services are available.";
+    public string SystemHealthText => RuntimeSnapshot.Health.IsDegraded
+        ? "Aptema is protecting what it can. Restart in recovery mode if problems continue."
+        : "Aptema is running normally.";
 
     public void SetQuickAdjustShortcutAvailability(bool available)
     {
@@ -353,6 +365,7 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         RuntimeSnapshot = snapshot;
         OnPropertyChanged(nameof(CanUndoFeedback));
+        OnPropertyChanged(nameof(SystemHealthText));
         OnPropertyChanged(nameof(IsPaused));
         OnPropertyChanged(nameof(PrimaryPauseText));
         OnPropertyChanged(nameof(ActiveApplicationText));
@@ -393,7 +406,7 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         AutoStatus = BuildAutoStatus();
-        DisplaySummary = BuildDisplaySummary(snapshot.Displays);
+        DisplaySummary = _isSafeMode ? "Recovery mode: screen controls are off" : BuildDisplaySummary(snapshot.Displays);
         var interval = RefreshCadencePolicy.GetInterval(_settings, snapshot.PausedUntil is not null, _settings.EnableContentBrightnessAnalysis);
         NextAdaptationText = $"Next check in {(int)interval.TotalSeconds}s";
         NotifyDecisionChanged();

@@ -15,6 +15,7 @@ public sealed class SettingsViewModel : ObservableObject
     private bool _enablePreferenceLearning;
     private bool _gamingVideoProtection;
     private bool _reduceWorkOnBattery;
+    private bool _safeModeEnabled;
     private int _transitionSpeedSeconds;
     private string _appOverridesText = "";
     private string _monitorPreferencesText = "";
@@ -117,6 +118,12 @@ public sealed class SettingsViewModel : ObservableObject
         set => SetProperty(ref _reduceWorkOnBattery, value);
     }
 
+    public bool SafeModeEnabled
+    {
+        get => _safeModeEnabled;
+        set => SetProperty(ref _safeModeEnabled, value);
+    }
+
     public int TransitionSpeedSeconds
     {
         get => _transitionSpeedSeconds;
@@ -154,6 +161,7 @@ public sealed class SettingsViewModel : ObservableObject
             EnablePreferenceLearning = EnablePreferenceLearning,
             GamingVideoProtection = GamingVideoProtection,
             ReduceWorkOnBattery = ReduceWorkOnBattery,
+            SafeModeEnabled = SafeModeEnabled,
             TransitionSpeed = TimeSpan.FromSeconds(Math.Clamp(TransitionSpeedSeconds, 30, 240)),
             PreferenceLearning = _resetLearningRequested ? PreferenceLearningModel.Empty : current.PreferenceLearning,
             AppOverrides = AppOverrideTextCodec.Parse(AppOverridesText),
@@ -175,6 +183,7 @@ public sealed class SettingsViewModel : ObservableObject
         EnablePreferenceLearning = settings.EnablePreferenceLearning;
         GamingVideoProtection = settings.GamingVideoProtection;
         ReduceWorkOnBattery = settings.ReduceWorkOnBattery;
+        SafeModeEnabled = settings.SafeModeEnabled;
         TransitionSpeedSeconds = (int)Math.Round(settings.TransitionSpeed.TotalSeconds);
         AppOverridesText = AppOverrideTextCodec.Format(settings.AppOverrides);
         MonitorPreferencesText = MonitorPreferenceTextCodec.Format(settings.MonitorPreferences);

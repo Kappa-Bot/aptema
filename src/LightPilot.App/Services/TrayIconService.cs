@@ -22,11 +22,11 @@ public sealed class TrayIconService : IDisposable
     private readonly TrayNotificationTracker _notificationTracker = new();
     private bool _disposed;
 
-    public TrayIconService(MainWindowViewModel viewModel, Window window)
+    public TrayIconService(MainWindowViewModel viewModel, Window window, bool enableHotkeys = true)
     {
         _viewModel = viewModel;
         _window = window;
-        _hotkeyHost = new HotkeyHost(viewModel.Settings.Hotkeys);
+        _hotkeyHost = new HotkeyHost(enableHotkeys ? viewModel.Settings.Hotkeys : new HotkeyConfiguration(null, null, null, null, null, null));
         _icons = LoadIcons();
         _notifyIcon = new Forms.NotifyIcon
         {

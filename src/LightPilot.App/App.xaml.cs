@@ -15,9 +15,11 @@ public partial class App : System.Windows.Application
     private MainWindowViewModel? _viewModel;
     private IComfortSession? _comfortSession;
     private TrayIconService? _trayIcon;
-    private WpfOverlayController? _overlayController;
+    private IDisposable? _overlayControllerLifetime;
+    private StartupHealthGuard? _startupHealthGuard;
     private DisplayTestCoordinator? _displayTestCoordinator;
     private readonly DisplayIdentificationService _displayIdentification = new();
+    private readonly SupportBundleService _supportBundleService = new();
     private IReadOnlyList<LightPilot.Core.MonitorModel> _detectedMonitors = Array.Empty<LightPilot.Core.MonitorModel>();
 
     public bool IsExplicitShutdown { get; private set; }
@@ -35,22 +37,39 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        _overlayController = new WpfOverlayController();
+        _startupHealthGuard = new StartupHealthGuard();
+        var startupHealth = _startupHealthGuard.BeginStartup();
         var settingsStore = new JsonSettingsStore();
         var initialSettings = settingsStore.LoadAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
         var noHardware = e.Args.Any(arg => string.Equals(arg, "--no-hardware", StringComparison.OrdinalIgnoreCase));
+        var safeMode = e.Args.Any(arg => string.Equals(arg, "--safe-mode", StringComparison.OrdinalIgnoreCase)) ||
+            initialSettings.SafeModeEnabled || startupHealth.ShouldStartSafeMode;
         var background = e.Args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
-        LightPilot.Application.IBrightnessController brightnessController = noHardware
+        IOverlayController overlayController;
+        if (safeMode)
+        {
+            overlayController = new NoOpOverlayController();
+        }
+        else
+        {
+            var wpfOverlay = new WpfOverlayController();
+            overlayController = wpfOverlay;
+            _overlayControllerLifetime = wpfOverlay;
+        }
+
+        LightPilot.Application.IBrightnessController brightnessController = noHardware || safeMode
             ? new NoOpBrightnessController()
             : new BrightnessController(
                 new DdcCiApi(),
                 new WindowsBrightnessApi(),
-                _overlayController);
+                overlayController);
         var clock = new TimeProviderClock();
         var monitorEnumerator = new MonitorEnumerator();
         _detectedMonitors = monitorEnumerator.EnumerateAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
         var foregroundWindowDetector = new ForegroundWindowDetector();
-        var contentLuminanceSampler = new ContentLuminanceSampler();
+        LightPilot.Application.IContentLuminanceSampler contentLuminanceSampler = safeMode
+            ? new DisabledContentLuminanceSampler()
+            : new ContentLuminanceSampler();
         var powerStatusProvider = new SystemPowerStatusProvider();
         var contextUpdates = new LatestValueChannel<ComfortContextUpdate>();
 
@@ -58,7 +77,7 @@ public partial class App : System.Windows.Application
         _displayTestCoordinator = new DisplayTestCoordinator(brightnessController, scheduler);
         _comfortSession = new ComfortSessionCoordinator(
             new ConfigurationCoordinator(settingsStore),
-            new DisplayLifecycleCoordinator(monitorEnumerator, _overlayController),
+            new DisplayLifecycleCoordinator(monitorEnumerator, overlayController as IDisplayTopologyObserver),
             new ComfortAutomationCoordinator(
                 foregroundWindowDetector,
                 contentLuminanceSampler,
@@ -70,17 +89,18 @@ public partial class App : System.Windows.Application
             brightnessController,
             clock,
             scheduler);
-        _viewModel = new MainWindowViewModel(_comfortSession, initialSettings)
+        _viewModel = new MainWindowViewModel(_comfortSession, initialSettings, safeMode)
         {
             StartWithWindows = _startupRegistration.IsEnabled()
         };
         _mainWindow = new MainWindow(_viewModel);
-        _trayIcon = new TrayIconService(_viewModel, _mainWindow);
+        _trayIcon = new TrayIconService(_viewModel, _mainWindow, enableHotkeys: !safeMode);
 
         _viewModel.RequestStartupRegistrationChanged += (_, enabled) => SetStartupEnabled(enabled);
         _viewModel.RequestExit += (_, _) => ExitApplication();
         _viewModel.RequestIdentifyDisplay += (_, monitor) => IdentifyDisplay(monitor);
         _viewModel.RequestTestDisplay += async (_, monitor) => await TestDisplayAsync(monitor);
+        _viewModel.RequestSupportBundle += async (_, _) => await CreateSupportBundleAsync();
 
         MainWindow = _mainWindow;
         _singleInstanceGuard?.StartActivationListener(() => Dispatcher.Invoke(ShowMainWindow));
@@ -93,6 +113,8 @@ public partial class App : System.Windows.Application
 
             ShowMainWindow();
         }
+
+        _ = MarkStartupHealthyAfterDelayAsync();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -100,9 +122,16 @@ public partial class App : System.Windows.Application
         SystemParameters.StaticPropertyChanged -= SystemParameters_StaticPropertyChanged;
         _comfortSession?.StopAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
         _trayIcon?.Dispose();
-        _overlayController?.Dispose();
+        _overlayControllerLifetime?.Dispose();
+        _startupHealthGuard?.MarkHealthy();
         _singleInstanceGuard?.Dispose();
         base.OnExit(e);
+    }
+
+    private async Task MarkStartupHealthyAfterDelayAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(10));
+        _startupHealthGuard?.MarkHealthy();
     }
 
     private void SystemParameters_StaticPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -192,6 +221,28 @@ public partial class App : System.Windows.Application
             ?? _viewModel.RuntimeSnapshot.PrimaryDecision
             ?? new LightPilot.Core.ComfortDecision(LightPilot.Core.ComfortProfileId.Auto, 60, 5200, 0, TimeSpan.FromSeconds(2), true, "Display check", []);
         await _displayTestCoordinator.TestAsync(monitor, baseline, _viewModel.Settings, CancellationToken.None);
+    }
+
+    private async Task CreateSupportBundleAsync()
+    {
+        if (_viewModel is null) return;
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Save Aptema support package",
+            Filter = "ZIP package (*.zip)|*.zip",
+            FileName = $"Aptema-support-{DateTime.Now:yyyyMMdd-HHmm}.zip",
+            AddExtension = true,
+            DefaultExt = ".zip"
+        };
+        if (dialog.ShowDialog(_mainWindow) != true) return;
+
+        var health = _viewModel.RuntimeSnapshot.Health;
+        var version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0.4.0";
+        await _supportBundleService.CreateAsync(
+            dialog.FileName,
+            new SupportBundleSnapshot(version, health.IsDegraded, health.Issues),
+            CancellationToken.None);
+        System.Windows.MessageBox.Show(_mainWindow!, "Support package created. It contains no screenshots, app names, window titles, or settings.", "Aptema", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void ExitApplication()

@@ -183,6 +183,10 @@
                         <CheckBox Content="Adapt bright pages locally" IsChecked="{Binding SettingsDraft.EnableContentBrightnessAnalysis, Mode=TwoWay}" AutomationProperties.Name="Adapt bright pages locally" />
                         <CheckBox Content="Protect fullscreen games and video" IsChecked="{Binding SettingsDraft.GamingVideoProtection, Mode=TwoWay}" AutomationProperties.Name="Protect fullscreen games and video" />
                         <CheckBox Content="Use less power on battery" IsChecked="{Binding SettingsDraft.ReduceWorkOnBattery, Mode=TwoWay}" AutomationProperties.Name="Use less power on battery" />
+                        <CheckBox Content="Start in recovery mode" IsChecked="{Binding SettingsDraft.SafeModeEnabled, Mode=TwoWay}" AutomationProperties.Name="Start Aptema in recovery mode" />
+                        <Border Margin="0,18,0,0" Padding="14" Background="{DynamicResource SurfaceSubtleBrush}" CornerRadius="6">
+                            <StackPanel><TextBlock Text="System health" FontWeight="SemiBold" /><TextBlock Margin="0,4,0,0" Text="{Binding SystemHealthText}" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" /><TextBlock Margin="0,4,0,0" Text="{Binding SafeModeStatusText}" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" /><Button Margin="0,12,0,0" HorizontalAlignment="Left" Content="Create support package" Command="{Binding CreateSupportBundleCommand}" Style="{StaticResource QuietButton}" /></StackPanel>
+                        </Border>
                         <TextBlock Margin="0,22,0,6" Text="Comfort intensity" FontWeight="SemiBold" />
                         <Slider Minimum="0" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True" Value="{Binding SettingsDraft.ComfortIntensity, Mode=TwoWay}" AutomationProperties.Name="Comfort intensity" />
                         <StackPanel Margin="0,26,0,0" Orientation="Horizontal"><Button Content="Save" Command="{Binding SaveSettingsCommand}" /><Button Margin="10,0,0,0" Content="Cancel" Command="{Binding CancelSettingsCommand}" Style="{StaticResource QuietButton}" /></StackPanel>
