@@ -6,7 +6,7 @@ namespace LightPilot.Infrastructure;
 
 public sealed class JsonSettingsStore : ISettingsStore
 {
-    public const int CurrentEnvelopeSchemaVersion = 5;
+    public const int CurrentEnvelopeSchemaVersion = 6;
     private const int BackupCount = 3;
 
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.General)
@@ -191,7 +191,7 @@ public sealed class JsonSettingsStore : ISettingsStore
                     : new SettingsReadResult(SettingsDocumentKind.Envelope, settings, schemaVersion);
             }
 
-            if (schemaVersion == 4)
+            if (schemaVersion is 4 or 5)
             {
                 if (!TryGetProperty(root, "settings", out var settingsElement) || settingsElement.ValueKind != JsonValueKind.Object)
                 {
@@ -313,9 +313,69 @@ public sealed class JsonSettingsStore : ISettingsStore
             EnablePreferenceLearning = settings.SchemaVersion < 3 || settings.EnablePreferenceLearning,
             PreferenceLearning = settings.PreferenceLearning ?? PreferenceLearningModel.Empty,
             DisplayConfigurations = NormalizeDisplays(settings),
-            Hotkeys = settings.Hotkeys ?? HotkeyConfiguration.Default
+            Hotkeys = settings.Hotkeys ?? HotkeyConfiguration.Default,
+            ApplicationRules = NormalizeApplicationRules(settings.ApplicationRules),
+            CustomProfiles = NormalizeCustomProfiles(settings.CustomProfiles),
+            AutomationRules = NormalizeAutomationRules(settings.AutomationRules)
         };
     }
+
+    private static IReadOnlyList<ApplicationComfortRule> NormalizeApplicationRules(IReadOnlyList<ApplicationComfortRule>? rules) =>
+        (rules ?? Array.Empty<ApplicationComfortRule>())
+            .Where(rule => !string.IsNullOrWhiteSpace(rule.Id) && !string.IsNullOrWhiteSpace(rule.ProcessName))
+            .Select(rule => rule with
+            {
+                Id = rule.Id.Trim(),
+                Name = string.IsNullOrWhiteSpace(rule.Name) ? rule.ProcessName.Trim() : rule.Name.Trim(),
+                ProcessName = Path.GetFileName(rule.ProcessName.Trim()),
+                Priority = Math.Clamp(rule.Priority, -100, 100),
+                IntensityOffset = Math.Clamp(rule.IntensityOffset, -20, 20)
+            })
+            .GroupBy(rule => rule.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderByDescending(rule => rule.Priority)
+            .ThenBy(rule => rule.Id, StringComparer.Ordinal)
+            .Take(200)
+            .ToArray();
+
+    private static IReadOnlyList<CustomComfortProfile> NormalizeCustomProfiles(IReadOnlyList<CustomComfortProfile>? profiles) =>
+        (profiles ?? Array.Empty<CustomComfortProfile>())
+            .Where(profile => !string.IsNullOrWhiteSpace(profile.Id) && !string.IsNullOrWhiteSpace(profile.Name))
+            .Select(profile => profile with
+            {
+                Id = profile.Id.Trim(),
+                Name = profile.Name.Trim(),
+                DayBrightness = Math.Clamp(profile.DayBrightness, 15, 100),
+                EveningBrightness = Math.Clamp(profile.EveningBrightness, 15, 100),
+                NightBrightness = Math.Clamp(profile.NightBrightness, 15, 100),
+                DayKelvin = Math.Clamp(profile.DayKelvin, 2800, 6500),
+                EveningKelvin = Math.Clamp(profile.EveningKelvin, 2800, 6500),
+                NightKelvin = Math.Clamp(profile.NightKelvin, 2800, 6500),
+                TransitionSeconds = Math.Clamp(profile.TransitionSeconds, 30, 240)
+            })
+            .GroupBy(profile => profile.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(profile => profile.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(50)
+            .ToArray();
+
+    private static IReadOnlyList<ComfortAutomationRule> NormalizeAutomationRules(IReadOnlyList<ComfortAutomationRule>? rules) =>
+        (rules ?? Array.Empty<ComfortAutomationRule>())
+            .Where(rule => !string.IsNullOrWhiteSpace(rule.Id))
+            .Select(rule => rule with
+            {
+                Id = rule.Id.Trim(),
+                Name = string.IsNullOrWhiteSpace(rule.Name) ? "Comfort rule" : rule.Name.Trim(),
+                Priority = Math.Clamp(rule.Priority, -100, 100),
+                BrightnessOffsetPercent = Math.Clamp(rule.BrightnessOffsetPercent, -12, 12),
+                WarmthOffsetKelvin = Math.Clamp(rule.WarmthOffsetKelvin, -480, 480)
+            })
+            .GroupBy(rule => rule.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderByDescending(rule => rule.Priority)
+            .ThenBy(rule => rule.Id, StringComparer.Ordinal)
+            .Take(200)
+            .ToArray();
 
     private static IReadOnlyList<DisplayConfiguration> NormalizeDisplays(UserSettings settings)
     {

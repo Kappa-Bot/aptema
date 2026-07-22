@@ -146,6 +146,42 @@ public sealed record HotkeyConfiguration(
     public static HotkeyConfiguration Default { get; } = new("Win+Alt+A", null, null, null, null, null);
 }
 
+public sealed record ApplicationComfortRule(
+    string Id,
+    string Name,
+    bool IsEnabled,
+    int Priority,
+    string ProcessName,
+    AppCategory Category,
+    ComfortProfileId? Profile,
+    string? CustomProfileId,
+    int IntensityOffset,
+    bool ProtectFullscreen);
+
+public sealed record CustomComfortProfile(
+    string Id,
+    string Name,
+    int DayBrightness,
+    int EveningBrightness,
+    int NightBrightness,
+    int DayKelvin,
+    int EveningKelvin,
+    int NightKelvin,
+    int TransitionSeconds,
+    bool ProtectFullscreen);
+
+public sealed record ComfortAutomationRule(
+    string Id,
+    string Name,
+    bool IsEnabled,
+    int Priority,
+    DayPhase? DayPhase,
+    AppCategory? AppCategory,
+    bool? IsFullscreen,
+    LuminanceClassification? Luminance,
+    int BrightnessOffsetPercent,
+    int WarmthOffsetKelvin);
+
 public sealed record MonitorPreference
 {
     public string MonitorId { get; init; } = "";
@@ -197,7 +233,9 @@ public sealed record ComfortDecision(
     IReadOnlyList<string> ReasonCodes,
     double Confidence = 0.65,
     DecisionSource Source = DecisionSource.Default,
-    bool IsLearned = false)
+    bool IsLearned = false,
+    string? ProfileName = null,
+    string? ResponsibleRule = null)
 {
     public LightTarget Target => new(TargetBrightnessPercent, TargetColorTemperatureKelvin, OverlayOpacity);
 }
@@ -289,7 +327,7 @@ public sealed record UserSettings
 {
     public static UserSettings Default { get; } = new();
 
-    public int SchemaVersion { get; init; } = 5;
+    public int SchemaVersion { get; init; } = 6;
     public bool AutoEnabled { get; init; } = true;
     public int ComfortIntensity { get; init; } = 45;
     public TimeOnly WakeTime { get; init; } = new(7, 0);
@@ -308,4 +346,7 @@ public sealed record UserSettings
     public IReadOnlyList<MonitorPreference> MonitorPreferences { get; init; } = Array.Empty<MonitorPreference>();
     public IReadOnlyList<DisplayConfiguration> DisplayConfigurations { get; init; } = Array.Empty<DisplayConfiguration>();
     public HotkeyConfiguration Hotkeys { get; init; } = HotkeyConfiguration.Default;
+    public IReadOnlyList<ApplicationComfortRule> ApplicationRules { get; init; } = Array.Empty<ApplicationComfortRule>();
+    public IReadOnlyList<CustomComfortProfile> CustomProfiles { get; init; } = Array.Empty<CustomComfortProfile>();
+    public IReadOnlyList<ComfortAutomationRule> AutomationRules { get; init; } = Array.Empty<ComfortAutomationRule>();
 }

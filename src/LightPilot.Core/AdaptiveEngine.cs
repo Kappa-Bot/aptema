@@ -17,24 +17,47 @@ public sealed class AdaptiveEngine
             return Decision(ComfortProfileId.Manual, snapshot.CurrentBrightness, snapshot.CurrentColorTemperatureKelvin, 0, false, "Manual adjustment cooldown", "ManualOverrideActive", settings, DecisionSource.Manual, confidence: 1);
         }
 
-        var profile = SelectProfile(snapshot);
+        var personalization = PersonalizationPolicy.Resolve(
+            snapshot.AppContext,
+            DayPhasePolicy.GetPhase(snapshot.Now),
+            snapshot.Content.Classification,
+            settings);
+        if (personalization.ApplicationRuleId is not null)
+        {
+            snapshot = snapshot with
+            {
+                AppContext = snapshot.AppContext with { Category = personalization.AppCategory }
+            };
+        }
+
+        var profile = personalization.ApplicationRuleId is not null
+            ? personalization.Profile
+            : SelectProfile(snapshot);
 
         if (settings.GamingVideoProtection && snapshot.AppContext.IsPresentation)
         {
-            return Decision(ComfortProfileId.Video, snapshot.CurrentBrightness, snapshot.CurrentColorTemperatureKelvin, 0, false, "Presentation protected", "SuppressedForPresentation", settings, DecisionSource.Protected, confidence: 1);
+            return Decision(ComfortProfileId.Video, snapshot.CurrentBrightness, snapshot.CurrentColorTemperatureKelvin, 0, false, "Presentation protected", "SuppressedForPresentation", settings, DecisionSource.Protected, 1, personalization);
         }
 
         if (settings.GamingVideoProtection && snapshot.AppContext.Category == AppCategory.Gaming && snapshot.AppContext.IsFullscreen)
         {
-            return Decision(ComfortProfileId.Gaming, snapshot.CurrentBrightness, snapshot.CurrentColorTemperatureKelvin, 0, false, "Gaming fullscreen protection", "SuppressedForGame", settings, DecisionSource.Protected, confidence: 1);
+            return Decision(ComfortProfileId.Gaming, snapshot.CurrentBrightness, snapshot.CurrentColorTemperatureKelvin, 0, false, "Gaming fullscreen protection", "SuppressedForGame", settings, DecisionSource.Protected, 1, personalization);
         }
 
         if (settings.GamingVideoProtection && snapshot.AppContext.Category == AppCategory.VideoMedia && snapshot.AppContext.IsFullscreen)
         {
-            return Decision(ComfortProfileId.Video, snapshot.CurrentBrightness, snapshot.CurrentColorTemperatureKelvin, 0, false, "Video playback protected", "SuppressedForVideoPlayback", settings, DecisionSource.Protected, confidence: 1);
+            return Decision(ComfortProfileId.Video, snapshot.CurrentBrightness, snapshot.CurrentColorTemperatureKelvin, 0, false, "Video playback protected", "SuppressedForVideoPlayback", settings, DecisionSource.Protected, 1, personalization);
         }
 
-        var raw = ComputeTarget(snapshot, profile, settings);
+        if (settings.GamingVideoProtection && snapshot.AppContext.IsFullscreen && personalization.ProtectFullscreen)
+        {
+            return Decision(profile, snapshot.CurrentBrightness, snapshot.CurrentColorTemperatureKelvin, 0, false, "Fullscreen comfort kept stable", "SuppressedByApplicationRule", settings, DecisionSource.Protected, 1, personalization);
+        }
+
+        var raw = ComputeTarget(snapshot, profile, settings, personalization);
+        var transition = personalization.CustomProfile is { } customProfile
+            ? TimeSpan.FromSeconds(Math.Clamp(customProfile.TransitionSeconds, 5, 600))
+            : settings.TransitionSpeed;
         var targetBrightness = raw.BrightnessPercent;
         var targetKelvin = raw.ColorTemperatureKelvin;
         var reason = BuildReason(snapshot, profile);
@@ -42,15 +65,16 @@ public sealed class AdaptiveEngine
 
         if (state.LastAppliedAt is { } lastApplied && snapshot.Now - lastApplied < AutomaticCooldown)
         {
-            return new ComfortDecision(profile, targetBrightness, targetKelvin, raw.OverlayOpacity, settings.TransitionSpeed, false, "Cooling down before next adjustment", new[] { "CooldownActive" }, raw.Confidence, raw.Source, raw.IsLearned);
+            return new ComfortDecision(profile, targetBrightness, targetKelvin, raw.OverlayOpacity, transition, false, "Cooling down before next adjustment", ["CooldownActive"], raw.Confidence, raw.Source, raw.IsLearned, personalization.ProfileName, personalization.ResponsibleRule);
         }
 
         if (state.LastDecision is { } last && Math.Abs(targetBrightness - last.BrightnessPercent) < 2 && Math.Abs(targetKelvin - last.ColorTemperatureKelvin) < 100)
         {
-            return new ComfortDecision(profile, targetBrightness, targetKelvin, raw.OverlayOpacity, settings.TransitionSpeed, false, "No visible change needed", new[] { "NoChangeWithinHysteresis" }, raw.Confidence, raw.Source, raw.IsLearned);
+            return new ComfortDecision(profile, targetBrightness, targetKelvin, raw.OverlayOpacity, transition, false, "No visible change needed", ["NoChangeWithinHysteresis"], raw.Confidence, raw.Source, raw.IsLearned, personalization.ProfileName, personalization.ResponsibleRule);
         }
 
-        return new ComfortDecision(profile, targetBrightness, targetKelvin, raw.OverlayOpacity, settings.TransitionSpeed, true, reason, new[] { reasonCode }, raw.Confidence, raw.Source, raw.IsLearned);
+        var reasonCodes = new[] { reasonCode }.Concat(personalization.AutomationRuleIds).ToArray();
+        return new ComfortDecision(profile, targetBrightness, targetKelvin, raw.OverlayOpacity, transition, true, reason, reasonCodes, raw.Confidence, raw.Source, raw.IsLearned, personalization.ProfileName, personalization.ResponsibleRule);
     }
 
     public ComfortDecision EvaluateManualFeedback(AdaptiveSnapshot snapshot, UserSettings settings, ComfortFeedback feedback)
@@ -91,18 +115,28 @@ public sealed class AdaptiveEngine
         return new ComfortDecision(profile, brightness, kelvin, overlay, TimeSpan.FromSeconds(18), true, reason, new[] { "ManualFeedback" }, 1, DecisionSource.Manual);
     }
 
-    private LightTarget ComputeTarget(AdaptiveSnapshot snapshot, ComfortProfileId profileId, UserSettings settings)
+    private LightTarget ComputeTarget(AdaptiveSnapshot snapshot, ComfortProfileId profileId, UserSettings settings, PersonalizationResolution personalization)
     {
         var profile = _profiles.Get(profileId);
         var phase = DayPhasePolicy.GetPhase(snapshot.Now);
-        var brightness = phase switch
+        var brightness = personalization.CustomProfile is { } customBrightness ? phase switch
+        {
+            DayPhase.Day => customBrightness.DayBrightness,
+            DayPhase.Evening => customBrightness.EveningBrightness,
+            _ => customBrightness.NightBrightness
+        } : phase switch
         {
             DayPhase.Day => profile.DayBrightness,
             DayPhase.Evening => profile.EveningBrightness,
             DayPhase.Night => profile.NightBrightness,
             _ => profile.DayBrightness
         };
-        var kelvin = phase switch
+        var kelvin = personalization.CustomProfile is { } customKelvin ? phase switch
+        {
+            DayPhase.Day => customKelvin.DayKelvin,
+            DayPhase.Evening => customKelvin.EveningKelvin,
+            _ => customKelvin.NightKelvin
+        } : phase switch
         {
             DayPhase.Day => profile.DayKelvin,
             DayPhase.Evening => profile.EveningKelvin,
@@ -110,7 +144,7 @@ public sealed class AdaptiveEngine
             _ => profile.DayKelvin
         };
 
-        var intensityFactor = Math.Clamp(settings.ComfortIntensity, 0, 100) / 100d;
+        var intensityFactor = Math.Clamp(settings.ComfortIntensity + personalization.IntensityOffset, 0, 100) / 100d;
         if (snapshot.Content.IsEnabled && snapshot.AppContext.Category is AppCategory.Browser or AppCategory.EmailCommunication or AppCategory.OfficeReading)
         {
             if (snapshot.Content.Classification == LuminanceClassification.MostlyWhite)
@@ -145,6 +179,9 @@ public sealed class AdaptiveEngine
         var learnedFatigue = FatigueModel.CalculateLearned(snapshot, learned);
         brightness += learned.BrightnessOffsetPercent + learnedFatigue.BrightnessOffsetPercent;
         kelvin += learned.WarmthOffsetKelvin + learnedFatigue.WarmthOffsetKelvin;
+
+        brightness += personalization.BrightnessOffsetPercent;
+        kelvin += personalization.WarmthOffsetKelvin;
 
         brightness += snapshot.Monitor.BrightnessOffsetPercent;
         brightness = LimitStep(snapshot.CurrentBrightness, brightness, maxStep: 3);
@@ -239,9 +276,9 @@ public sealed class AdaptiveEngine
         return current + (Math.Sign(delta) * maxStep);
     }
 
-    private static ComfortDecision Decision(ComfortProfileId profile, int brightness, int kelvin, double opacity, bool shouldApply, string reason, string code, UserSettings settings, DecisionSource source = DecisionSource.Default, double confidence = 0.65)
+    private static ComfortDecision Decision(ComfortProfileId profile, int brightness, int kelvin, double opacity, bool shouldApply, string reason, string code, UserSettings settings, DecisionSource source = DecisionSource.Default, double confidence = 0.65, PersonalizationResolution? personalization = null)
     {
-        return new ComfortDecision(profile, brightness, kelvin, opacity, settings.TransitionSpeed, shouldApply, reason, new[] { code }, confidence, source);
+        return new ComfortDecision(profile, brightness, kelvin, opacity, settings.TransitionSpeed, shouldApply, reason, [code], confidence, source, false, personalization?.ProfileName, personalization?.ResponsibleRule);
     }
 
     private static double CalculateOverlay(int kelvin)

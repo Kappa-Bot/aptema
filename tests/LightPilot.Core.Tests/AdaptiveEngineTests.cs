@@ -248,6 +248,79 @@ public sealed class AdaptiveEngineTests
         Assert.False(decision.ShouldApply);
         Assert.Equal("Cooling down before next adjustment", decision.Reason);
     }
+
+    [Fact]
+    public void ApplicationRuleReclassifiesBeforeFullscreenProtection()
+    {
+        var engine = new AdaptiveEngine();
+        var settings = UserSettings.Default with
+        {
+            ApplicationRules = [new("game-rule", "Keep this game stable", true, 10, "special.exe", AppCategory.Gaming, ComfortProfileId.Gaming, null, 0, true)]
+        };
+        var snapshot = TestSnapshots.Default with
+        {
+            AppContext = new AppContextModel("SPECIAL.EXE", AppCategory.Unknown, isFullscreen: true),
+            CurrentBrightness = 61
+        };
+
+        var decision = engine.Evaluate(snapshot, AdaptiveEngineState.Empty, settings);
+
+        Assert.False(decision.ShouldApply);
+        Assert.Equal(DecisionSource.Protected, decision.Source);
+        Assert.Equal(ComfortProfileId.Gaming, decision.Profile);
+        Assert.Equal("Keep this game stable", decision.ResponsibleRule);
+    }
+
+    [Fact]
+    public void ApplicationRuleCanProtectAnyFullscreenApplication()
+    {
+        var engine = new AdaptiveEngine();
+        var settings = UserSettings.Default with
+        {
+            ApplicationRules = [new("presentation-rule", "Stable presentation", true, 10, "slides.exe", AppCategory.OfficeReading, ComfortProfileId.Reading, null, 0, true)]
+        };
+        var snapshot = TestSnapshots.Default with
+        {
+            AppContext = new AppContextModel("slides.exe", AppCategory.Unknown, isFullscreen: true),
+            CurrentBrightness = 61
+        };
+
+        var decision = engine.Evaluate(snapshot, AdaptiveEngineState.Empty, settings);
+
+        Assert.False(decision.ShouldApply);
+        Assert.Equal(DecisionSource.Protected, decision.Source);
+        Assert.Equal("Stable presentation", decision.ResponsibleRule);
+    }
+
+    [Fact]
+    public void CustomProfileAndAutomationProduceExplainableBoundedTarget()
+    {
+        var engine = new AdaptiveEngine();
+        var settings = UserSettings.Default with
+        {
+            CustomProfiles = [new("soft-code", "Soft coding", 66, 52, 38, 6000, 4700, 3600, 110, true)],
+            ApplicationRules = [new("code-rule", "Late coding", true, 20, "code.exe", AppCategory.Development, null, "soft-code", 0, true)],
+            AutomationRules = [new("night-code", "Night softening", true, 10, DayPhase.Night, AppCategory.Development, false, LuminanceClassification.Dark, -4, -180)]
+        };
+        var snapshot = TestSnapshots.Default with
+        {
+            Now = new DateTimeOffset(2026, 5, 7, 22, 30, 0, TimeSpan.Zero),
+            AppContext = new AppContextModel("code.exe", AppCategory.Unknown, false),
+            Content = new ContentLuminanceSample(true, 0.12, 0, 0.02, 0.84, LuminanceClassification.Dark),
+            CurrentBrightness = 0,
+            CurrentColorTemperatureKelvin = 0
+        };
+
+        var decision = engine.Evaluate(snapshot, AdaptiveEngineState.Empty, settings);
+
+        Assert.Equal(ComfortProfileId.Development, decision.Profile);
+        Assert.Equal("Soft coding", decision.ProfileName);
+        Assert.Equal("Late coding", decision.ResponsibleRule);
+        Assert.Contains("night-code", decision.ReasonCodes);
+        Assert.Equal(34, decision.TargetBrightnessPercent);
+        Assert.Equal(3420, decision.TargetColorTemperatureKelvin);
+        Assert.Equal(TimeSpan.FromSeconds(110), decision.TransitionDuration);
+    }
 }
 
 internal static class TestSnapshots

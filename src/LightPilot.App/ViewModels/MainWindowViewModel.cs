@@ -24,6 +24,11 @@ public sealed class MainWindowViewModel : ObservableObject
     private ShellSurface _selectedSurface = ShellSurface.Home;
     private SettingsViewModel? _settingsDraft;
     private DisplaySettingsViewModel? _displaySettingsDraft;
+    private PersonalizationSettingsViewModel? _personalizationDraft;
+    private string? _currentProfileName;
+    private string _decisionSourceText = "Aptema default";
+    private string _decisionConfidenceText = "Building confidence";
+    private string _decisionRuleText = "No personal rule needed";
 
     public MainWindowViewModel(IComfortSession session, UserSettings? initialSettings = null)
     {
@@ -78,6 +83,8 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             if (parameter is DisplayConfigurationViewModel display) RequestTestDisplay?.Invoke(this, display.Monitor);
         });
+        SavePersonalizationCommand = new RelayCommand(SavePersonalization);
+        CancelPersonalizationCommand = new RelayCommand(CancelPersonalization);
         ExitCommand = new RelayCommand(() => RequestExit?.Invoke(this, EventArgs.Empty));
 
         ProjectSnapshot(_runtimeSnapshot);
@@ -121,6 +128,8 @@ public sealed class MainWindowViewModel : ObservableObject
     public RelayCommand CancelDisplaySettingsCommand { get; }
     public RelayCommand IdentifyDisplayCommand { get; }
     public RelayCommand TestDisplayCommand { get; }
+    public RelayCommand SavePersonalizationCommand { get; }
+    public RelayCommand CancelPersonalizationCommand { get; }
     public RelayCommand ExitCommand { get; }
 
     public UserSettings Settings => _settings;
@@ -246,6 +255,12 @@ public sealed class MainWindowViewModel : ObservableObject
         private set => SetProperty(ref _displaySettingsDraft, value);
     }
 
+    public PersonalizationSettingsViewModel? PersonalizationDraft
+    {
+        get => _personalizationDraft;
+        private set => SetProperty(ref _personalizationDraft, value);
+    }
+
     public string BrightnessText => ComfortCopy.DescribeLightLevel(BrightnessPercent);
     public string WarmthText => ComfortCopy.DescribeWarmth(ColorTemperatureKelvin);
     public string ComfortIntensityText => ComfortCopy.DescribeIntensity(ComfortIntensity);
@@ -270,7 +285,10 @@ public sealed class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ShortcutStatusText));
     }
 
-    public string CurrentModeText => CurrentMode switch
+    public string CurrentModeText => !string.IsNullOrWhiteSpace(_currentProfileName) &&
+                                     !string.Equals(_currentProfileName, CurrentMode.ToString(), StringComparison.OrdinalIgnoreCase)
+        ? _currentProfileName
+        : CurrentMode switch
     {
         ComfortProfileId.Reading when GetDayPart() == "Evening" => "Evening Reading",
         ComfortProfileId.Reading => "Reading",
@@ -280,6 +298,24 @@ public sealed class MainWindowViewModel : ObservableObject
         ComfortProfileId.Day => "Day",
         _ => CurrentMode.ToString()
     };
+
+    public string DecisionSourceText
+    {
+        get => _decisionSourceText;
+        private set => SetProperty(ref _decisionSourceText, value);
+    }
+
+    public string DecisionConfidenceText
+    {
+        get => _decisionConfidenceText;
+        private set => SetProperty(ref _decisionConfidenceText, value);
+    }
+
+    public string DecisionRuleText
+    {
+        get => _decisionRuleText;
+        private set => SetProperty(ref _decisionRuleText, value);
+    }
 
     public string ComfortStateText => !_settings.AutoEnabled
         ? "Comfort is paused"
@@ -328,6 +364,17 @@ public sealed class MainWindowViewModel : ObservableObject
         if (decision is not null)
         {
             CurrentMode = decision.Profile;
+            _currentProfileName = decision.ProfileName;
+            DecisionSourceText = decision.Source switch
+            {
+                DecisionSource.Learned => "Learned from your feedback",
+                DecisionSource.Manual => "Your latest correction",
+                DecisionSource.Protected => "Fullscreen protection",
+                DecisionSource.Paused => "Paused",
+                _ => "Aptema default"
+            };
+            DecisionConfidenceText = decision.Confidence >= 0.8 ? "High confidence" : decision.Confidence >= 0.45 ? "Growing confidence" : "Early estimate";
+            DecisionRuleText = decision.ResponsibleRule ?? "No personal rule needed";
             if (decision.ShouldApply || BrightnessPercent == 0)
             {
                 BrightnessPercent = decision.TargetBrightnessPercent;
@@ -475,6 +522,15 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             DisplaySettingsDraft = new DisplaySettingsViewModel(_settings, RuntimeSnapshot.Displays);
         }
+        else if (surface is ShellSurface.Applications or ShellSurface.Profiles or ShellSurface.Automation or ShellSurface.Learning
+                 && PersonalizationDraft is null)
+        {
+            PersonalizationDraft = new PersonalizationSettingsViewModel(
+                _settings,
+                RuntimeSnapshot.AppContext.ProcessName,
+                RuntimeSnapshot.AppContext.Category);
+            PersonalizationDraft.LoadLearningCount(_settings);
+        }
 
         SelectedSurface = surface;
     }
@@ -519,6 +575,22 @@ public sealed class MainWindowViewModel : ObservableObject
     private void CancelDisplaySettings()
     {
         DisplaySettingsDraft = null;
+        SelectedSurface = ShellSurface.Home;
+    }
+
+    private void SavePersonalization()
+    {
+        if (PersonalizationDraft is not null)
+        {
+            ApplySettingsToSession(PersonalizationDraft.ToSettings(_settings));
+        }
+        PersonalizationDraft = null;
+        SelectedSurface = ShellSurface.Home;
+    }
+
+    private void CancelPersonalization()
+    {
+        PersonalizationDraft = null;
         SelectedSurface = ShellSurface.Home;
     }
 

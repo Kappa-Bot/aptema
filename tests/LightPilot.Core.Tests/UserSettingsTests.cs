@@ -29,7 +29,7 @@ public sealed class UserSettingsTests
     [Fact]
     public void DefaultsFavorGentleComfort()
     {
-        Assert.Equal(5, UserSettings.Default.SchemaVersion);
+        Assert.Equal(6, UserSettings.Default.SchemaVersion);
         Assert.Equal(45, UserSettings.Default.ComfortIntensity);
         Assert.Equal(25, UserSettings.Default.MinimumBrightnessPercent);
         Assert.Equal(90, UserSettings.Default.MaximumBrightnessPercent);
