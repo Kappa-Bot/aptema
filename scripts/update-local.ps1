@@ -1,5 +1,5 @@
 param(
-    [string]$Repository = "Kappa-Bot/light-pilot"
+    [string]$Repository = "Kappa-Bot/aptema"
 )
 
 $ErrorActionPreference = "Stop"
