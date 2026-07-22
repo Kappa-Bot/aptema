@@ -4,7 +4,7 @@ Run these checks after `dotnet build` and `dotnet test` pass.
 
 ## Launch
 
-- Start `LightPilot.App`.
+- Start `Aptema.App`.
 - Confirm the compact main window opens.
 - Confirm Home shows only comfort state, human mode, reason, display summary, Pause, and Adjust.
 - Confirm Quick Adjust has `Too bright`, `Too dim`, `Too warm`, `Too cold`, and `Perfect`.
@@ -15,7 +15,7 @@ Run these checks after `dotnet build` and `dotnet test` pass.
 ## Tray
 
 - Left click opens the main window.
-- Right click shows Auto on/off, Pause 30 min, Pause until tomorrow, Too bright, Too dim, Perfect, Open Light Pilot, Settings, Exit.
+- Right click shows Auto on/off, Pause 30 min, Pause until tomorrow, Too bright, Too dim, Perfect, Open Aptema, Settings, Exit.
 - Pause changes the main window state.
 - Resume returns to gradual automatic adjustment.
 - Exit shuts down tray icon and app process.
@@ -24,7 +24,7 @@ Run these checks after `dotnet build` and `dotnet test` pass.
 
 - Change comfort intensity and restart the app.
 - Use Quick Adjust feedback; confirm correction is gradual and settings store learned aggregates only.
-- Confirm settings persist under `%LOCALAPPDATA%\LightPilot\settings.json`.
+- Confirm settings persist under `%LOCALAPPDATA%\Aptema\config\settings.json`.
 - Confirm content brightness analysis is off by default.
 - Confirm preference learning can be disabled and reset.
 - Confirm reset restores safe defaults.
@@ -54,7 +54,7 @@ Run these checks after `dotnet build` and `dotnet test` pass.
 
 - Run `.\scripts\install-local.ps1`.
 - Confirm app starts in the tray.
-- Confirm Start Menu shortcut `Light Pilot` exists.
+- Confirm Start Menu shortcut `Aptema` exists.
 - Confirm startup registry uses `--background`.
 - Run `.\scripts\smoke.ps1`.
 - Run `.\scripts\update-local.ps1` only when network access to GitHub is expected.

@@ -2,8 +2,8 @@
 
 ## v0.2.1
 
-1. Run `dotnet build LightPilot.sln`.
-2. Run `dotnet test LightPilot.sln`.
+1. Run `dotnet build Aptema.sln`.
+2. Run `dotnet test Aptema.sln`.
 3. Run `.\scripts\install-local.ps1`.
 4. Run `.\scripts\smoke.ps1`.
 5. Run `.\scripts\package-release.ps1 -Version 0.2.1`.

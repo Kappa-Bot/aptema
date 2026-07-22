@@ -1,70 +1,24 @@
-# Project Decisions
+# Aptema Project Decisions
 
-## Stack
+## Stack And Boundaries
 
-- C# and `.NET 10`
-- WPF for the Windows desktop app
-- xUnit for tests
-- JSON settings, not SQLite
-- Local-first architecture with no telemetry or cloud dependency
+- C#, .NET 10, WPF, xUnit, JSON; no SQLite or cloud
+- `Aptema.Core`: deterministic OS-free policy, learning, profiles, rules
+- `Aptema.Application`: use cases, immutable runtime snapshots, coordinators
+- `Aptema.Infrastructure`: Windows APIs, persistence, diagnostics, startup
+- `Aptema.App`: WPF, tray, OSD, overlays, onboarding, composition only
+- `Aptema.Updater`: separate transactional updater; no self-replacement
 
-## Architecture
+ViewModels never poll, call native APIs, write monitors, or persist directly. Latest-value channels collapse stale context/luminance events.
 
-The solution is split into three production projects:
+## Safety
 
-- `LightPilot.Core`: deterministic adaptive rules, models, profiles, app mapping, and luminance classification.
-- `LightPilot.Infrastructure`: Windows adapters for monitor enumeration, DDC/CI, WMI brightness, foreground window context, fullscreen detection, content sampling, startup registration, and settings persistence.
-- `LightPilot.App`: WPF UI, tray behavior, settings, and background coordination.
+Automatic changes remain within 3 brightness points and 200K per decision, cooldown, hysteresis, user limits, and monitor limits. Manual feedback remains bounded. Fullscreen protection suppresses automatic writes. DDC failures degrade one display only. Recovery mode disables DDC, overlays, hotkeys, and content analysis.
 
-Core has no WPF or Win32 dependency. Infrastructure wraps native APIs behind interfaces so tests can use fakes.
+## Persistence And Migration
 
-## v0.3 Product Direction
+Schema 6 settings use atomic replacement, three known-good backups, corruption quarantine, and future-schema preservation. Stable displays prefer DisplayConfig path plus EDID, then WMI, then legacy alias. Light Pilot v3 import is idempotent and never removes source data.
 
-v0.3 shifts Light Pilot from a small brightness utility to a tray-first adaptive comfort assistant.
+## Updates
 
-- The main window is not a dashboard. It has Comfort Home, Quick Adjust, and Settings.
-- Home answers only: is the screen comfortable, why, how many displays are protected, and how to pause or adjust.
-- Quick Adjust is the primary correction loop. User feedback becomes local preference learning.
-- Settings owns monitor details, DDC/CI, content analysis, app overrides, safety limits, and reset controls.
-
-## Safety Defaults
-
-- Auto mode is enabled by default.
-- Content brightness analysis is disabled by default.
-- Brightness automation clamps to `25%-90%`.
-- The engine never targets below an effective `15%` hard floor.
-- DDC/CI writes are throttled to avoid rapid hardware calls.
-- Fullscreen gaming/video/presentation contexts suppress automatic visible changes.
-- Auto mode uses gentle steps: at most 3 brightness points and 200K warmth per decision, with cooldown and hysteresis.
-- Manual feedback is capped to 6 brightness points and 300K warmth.
-
-## Monitor Control
-
-DDC/CI is the preferred hardware path for external monitors, but it is unreliable across docks, KVMs, cables, firmware, and GPU drivers. Light Pilot treats failed DDC/CI as a per-monitor degraded state rather than an app failure.
-
-WMI brightness is used for laptop/internal panels when available. Software overlay is the fallback because it is predictable and reversible, although it does not reduce panel backlight power.
-
-## Adaptive Learning
-
-Learning stores aggregates only:
-
-- monitor id
-- app category
-- day phase
-- fullscreen state
-- luminance class
-- brightness and warmth scores
-- confidence
-
-The app does not store screenshots, window titles, content text, or raw pixels. Learned offsets are capped to `-12..+12` brightness and `-480K..+480K` warmth, then still pass through step limits and safety clamps.
-
-## UI
-
-The UI is intentionally small and avoids technical labels in the normal path. The main window answers only:
-
-- Is Auto active?
-- What mode is current?
-- Why?
-- Can I pause or correct it quickly?
-
-Advanced details stay in Settings or local diagnostics. Main UI uses human labels such as `Comfortable`, `Soft`, and `Adjusting gently` instead of raw control-layer names.
+Update packages require a matching SHA-256 manifest. Aptema extracts into `App.next`, blocks path traversal, runs a safe smoke test, retains `App.previous`, switches, runs a second smoke test, and rolls back on failure. This verifies integrity, not publisher authenticity; code signing remains required for that.

@@ -1,97 +1,57 @@
-# Light Pilot
+# Aptema
 
-![Light Pilot logo](src/LightPilot.App/Assets/LightPilotLogo.png)
+![Aptema mark](src/Aptema.App/Assets/Aptema-128.png)
 
-**Light Pilot** is a local-first Windows eye-comfort assistant. It runs from the tray, keeps screens comfortable automatically, and learns from quick corrections such as `Too bright`, `Too dim`, and `Perfect`.
+**Every screen, in balance.**
 
-It is designed to feel quieter and more personal than CareUEyes Lite, f.lux, or Windows Night Light: Auto on, tray running, minimal UI, gradual adjustments.
+Adaptive screen comfort for Windows. Aptema runs quietly from the system tray, makes small brightness and warmth corrections, protects fullscreen work, and learns from `Too bright`, `Too dim`, `Warmer`, `Cooler`, and `Perfect` feedback.
 
-## Highlights
+Private by design. Local by default.
 
-- Premium tray-first WPF app for Windows
-- 3-surface UI: Comfort Home, Quick Adjust, Settings
-- Contextual preference learning stored locally as aggregates only
-- Gentle automatic brightness: max 3 percentage points per decision
-- Gentle warmth: max 200K per decision
-- Manual corrections are capped and applied gradually
-- Fullscreen game/video/presentation protection
-- DDC/CI monitor brightness when supported
-- WMI laptop brightness fallback
-- Software overlay fallback when hardware control is unavailable
-- Optional local-only content brightness analysis, off by default
-- Startup registration with `--background`
-- Single-instance tray behavior
-- MIT licensed
+## Product
+
+- Tray-first daily experience plus full WPF configuration app
+- DDC/CI, Windows brightness, then per-display overlay fallback
+- Maximum automatic step: 3 brightness points and 200K warmth
+- Fullscreen game, video, and presentation protection
+- Local aggregate preference learning with confidence and explanations
+- Stable multi-monitor identity, reversible display tests, onboarding
+- Opt-in in-memory luminance analysis; no screenshot storage
+- Recovery mode after repeated startup failures
+- Sanitized bounded diagnostics and privacy-filtered support ZIP
+- SHA-256 update staging, smoke test, known-good copy, rollback
 
 ## Privacy
 
-Light Pilot is local-first.
+No account, cloud, telemetry, payments, screenshot persistence, window-title storage, or content upload. Learned data contains process name/category, day phase, fullscreen state, luminance class, monitor ID, bounded offsets, and confidence only. See [PRIVACY.md](PRIVACY.md).
 
-- No cloud usage
-- No telemetry
-- No screenshot storage
-- No clipboard usage
-- No window title storage
-- Learned preferences store only app category, day phase, fullscreen state, luminance class, monitor id, offsets, and confidence
-
-Content brightness analysis is opt-in. When enabled, Light Pilot samples a tiny in-memory frame and immediately reduces it to brightness aggregates. Raw pixels are not persisted.
-
-## Run From Source
+## Build And Test
 
 ```powershell
-dotnet build LightPilot.sln
-dotnet run --project src/LightPilot.App/LightPilot.App.csproj
+dotnet build Aptema.sln -c Release
+dotnet test Aptema.sln -c Release --no-build
 ```
 
-Background/tray mode:
+Run normally, in tray, or without hardware writes:
 
 ```powershell
-dotnet run --project src/LightPilot.App/LightPilot.App.csproj -- --background
+dotnet run --project src/Aptema.App/Aptema.App.csproj
+dotnet run --project src/Aptema.App/Aptema.App.csproj -- --background
+dotnet run --project src/Aptema.App/Aptema.App.csproj -- --safe-mode --no-hardware
 ```
 
-Safe no-hardware mode:
-
-```powershell
-dotnet run --project src/LightPilot.App/LightPilot.App.csproj -- --no-hardware
-```
-
-## Test
-
-```powershell
-dotnet test LightPilot.sln
-```
-
-## Local Install
+## Install And Package
 
 ```powershell
 .\scripts\install-local.ps1
-```
-
-This installs to `%LOCALAPPDATA%\LightPilot\App`, creates a Start Menu shortcut, starts the tray app, and registers startup with `--background`.
-
-Smoke check:
-
-```powershell
 .\scripts\smoke.ps1
+.\scripts\package-release.ps1 -Version 0.4.0
+.\scripts\package-release.ps1 -Version 0.4.0 -BuildInstaller
 ```
 
-Uninstall local app files:
+Local install uses `%LOCALAPPDATA%\Aptema\App`, registers `Aptema --background`, creates an Aptema Start Menu shortcut, migrates existing Light Pilot settings without deleting them, and leaves a known-good application copy. Inno Setup 6 is required only for the installer.
 
-```powershell
-.\scripts\uninstall-local.ps1
-```
-
-## Package
-
-```powershell
-.\scripts\package-release.ps1 -Version 0.3.0
-```
-
-Build installer too when Inno Setup 6 is installed:
-
-```powershell
-.\scripts\package-release.ps1 -Version 0.3.0 -BuildInstaller
-```
+Hardware-changing tests never run unless `APTEMA_ALLOW_HARDWARE_TESTS=1` is explicitly set.
 
 ## License
 

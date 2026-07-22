@@ -1,53 +1,19 @@
-# Agent Context
+# Aptema Agent Context
 
-Light Pilot is a professional adaptive screen comfort utility for Windows.
+Product rule: make screens comfortable automatically. Keep normal UI calm, human, and tray-first. No dashboards, charts, raw logs, technical reason codes, or primary-view monitor percentages.
 
-## Product Rule
+Architecture boundaries are strict: Core deterministic/OS-free; Application coordinates use cases; Infrastructure owns Windows/persistence; App owns WPF/tray/composition. Never move timers, native calls, monitor writes, or direct persistence into ViewModels.
 
-One job: make screens comfortable automatically.
+Privacy invariants: no cloud, telemetry, screenshots, raw pixels, window titles, typed content, or content logs. Process names may be stored only for explicit app categorization. Content analysis stays opt-in and in-memory.
 
-Do not turn the app into a dashboard. Normal UI must avoid charts, raw logs, and technical noise.
+Safety invariants: minimum limits, 3-point/200K automatic steps, cooldown, hysteresis, fullscreen protection, per-display failure isolation, pause/reset, no physical monitor tests without `APTEMA_ALLOW_HARDWARE_TESTS=1`.
 
-## Important Defaults
-
-- Content brightness analysis is opt-in and local only.
-- Settings live under `%LOCALAPPDATA%\LightPilot`.
-- No screenshots, pixels, app content, or window titles should be persisted.
-- Brightness control must tolerate unsupported monitors.
-- Fullscreen games/videos/presentations should not receive disruptive changes.
-- Normal UI should be human-first: avoid control-layer names, raw reasons, and percentage-heavy presentation.
-- Adaptive transitions should remain gradual: brightness max 3 points per decision, warmth max 200K per decision.
-- Quick Adjust feedback must store only local aggregates. Do not store window titles, screenshots, pixels, or content.
-- Home must stay calm: no dense display list, no raw percentages, no DDC/WMI/overlay labels.
-
-## Project Shape
-
-```text
-src/LightPilot.Core
-src/LightPilot.Infrastructure
-src/LightPilot.App
-tests/LightPilot.Core.Tests
-tests/LightPilot.Infrastructure.Tests
-tests/LightPilot.App.Tests
-docs/
-```
-
-Core should remain deterministic and OS-free. Infrastructure owns Windows APIs. App owns WPF and tray behavior.
-
-## Validation
-
-Run:
+Validation:
 
 ```powershell
-dotnet build LightPilot.sln
-dotnet test LightPilot.sln
-```
-
-Do not run native tests that change real monitor brightness unless the user explicitly opts in.
-
-Local install and startup smoke:
-
-```powershell
-.\scripts\install-local.ps1
+dotnet build Aptema.sln -c Release
+dotnet test Aptema.sln -c Release --no-build
 .\scripts\smoke.ps1
 ```
+
+Current projects: `src/Aptema.Core`, `src/Aptema.Application`, `src/Aptema.Infrastructure`, `src/Aptema.App`, `src/Aptema.Updater`, and matching tests plus `Aptema.Integration.Tests`.
