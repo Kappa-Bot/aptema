@@ -17,6 +17,7 @@ public sealed class ComfortSessionCoordinator(
     private Task? _loopTask;
     private DateTimeOffset _sessionStartedAt = clock.LocalNow;
     private DateTimeOffset? _pauseUntil;
+    private FeedbackUndoCheckpoint? _feedbackUndo;
 
     public event Action<ComfortRuntimeSnapshot>? SnapshotChanged;
 
@@ -147,6 +148,8 @@ public sealed class ComfortSessionCoordinator(
     public ValueTask ApplyFeedbackAsync(ComfortFeedback feedback, CancellationToken cancellationToken) =>
         ExecuteLockedAsync(async token =>
         {
+            var previousSettings = Settings;
+            var previousDecision = CurrentSnapshot.PrimaryDecision;
             var primary = CurrentSnapshot.PrimaryDecision;
             var result = await feedbackCoordinator.ApplyAsync(
                 new FeedbackRequest(
@@ -166,6 +169,9 @@ public sealed class ComfortSessionCoordinator(
 
             var outcome = result.Value!;
             Settings = outcome.Settings;
+            _feedbackUndo = previousDecision is null
+                ? null
+                : new FeedbackUndoCheckpoint(previousSettings, previousDecision, clock.UtcNow.AddSeconds(10));
             var states = _displays.Select((display, index) => new DisplayRuntimeState(
                 display,
                 outcome.Decision,
@@ -182,8 +188,53 @@ public sealed class ComfortSessionCoordinator(
                 LearningSummary.From(Settings),
                 result.Status == OperationStatus.Degraded
                     ? new SystemHealthState(true, [result.Code ?? "FeedbackDegraded"])
+                    : SystemHealthState.Healthy,
+                _feedbackUndo?.AvailableUntil);
+            SnapshotChanged?.Invoke(CurrentSnapshot);
+        }, cancellationToken);
+
+    public ValueTask<OperationResult<ComfortRuntimeSnapshot>> UndoFeedbackAsync(CancellationToken cancellationToken) =>
+        ExecuteLockedAsync(async token =>
+        {
+            var checkpoint = _feedbackUndo;
+            if (checkpoint is null || checkpoint.AvailableUntil < clock.UtcNow)
+            {
+                _feedbackUndo = null;
+                CurrentSnapshot = CurrentSnapshot with { FeedbackUndoAvailableUntil = null };
+                SnapshotChanged?.Invoke(CurrentSnapshot);
+                return OperationResult<ComfortRuntimeSnapshot>.Failure(OperationStatus.Unavailable, "FeedbackUndoExpired");
+            }
+
+            var result = await feedbackCoordinator.UndoAsync(
+                new FeedbackUndoRequest(checkpoint.Settings, _displays, checkpoint.Decision),
+                token).ConfigureAwait(false);
+            if (!result.IsUsable)
+            {
+                return OperationResult<ComfortRuntimeSnapshot>.Failure(result.Status, result.Code ?? "FeedbackUndoFailed");
+            }
+
+            Settings = checkpoint.Settings;
+            _feedbackUndo = null;
+            var outcome = result.Value!;
+            var states = _displays.Select((display, index) => new DisplayRuntimeState(
+                display,
+                checkpoint.Decision,
+                index < outcome.ApplyResults.Length ? outcome.ApplyResults[index] : BrightnessApplyResult.NoChange(display.Id)));
+            CurrentSnapshot = new ComfortRuntimeSnapshot(
+                clock.UtcNow,
+                CurrentSnapshot.AppContext,
+                CurrentSnapshot.Content,
+                states,
+                checkpoint.Decision,
+                _pauseUntil,
+                LearningSummary.From(Settings),
+                result.Status == OperationStatus.Degraded
+                    ? new SystemHealthState(true, [result.Code ?? "FeedbackUndoDegraded"])
                     : SystemHealthState.Healthy);
             SnapshotChanged?.Invoke(CurrentSnapshot);
+            return result.Status == OperationStatus.Degraded
+                ? OperationResult<ComfortRuntimeSnapshot>.Degraded(CurrentSnapshot, result.Code ?? "FeedbackUndoDegraded")
+                : OperationResult<ComfortRuntimeSnapshot>.Succeeded(CurrentSnapshot);
         }, cancellationToken);
 
     public ValueTask ResetComfortAsync(CancellationToken cancellationToken) =>
@@ -266,7 +317,12 @@ public sealed class ComfortSessionCoordinator(
             cancellationToken).ConfigureAwait(false);
         if (result.IsUsable)
         {
-            CurrentSnapshot = result.Value!;
+            if (_feedbackUndo?.AvailableUntil < clock.UtcNow)
+            {
+                _feedbackUndo = null;
+            }
+
+            CurrentSnapshot = result.Value! with { FeedbackUndoAvailableUntil = _feedbackUndo?.AvailableUntil };
             SnapshotChanged?.Invoke(CurrentSnapshot);
         }
     }
@@ -291,4 +347,19 @@ public sealed class ComfortSessionCoordinator(
             _gate.Release();
         }
     }
+
+    private async ValueTask<T> ExecuteLockedAsync<T>(Func<CancellationToken, ValueTask<T>> operation, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await operation(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private sealed record FeedbackUndoCheckpoint(UserSettings Settings, ComfortDecision Decision, DateTimeOffset AvailableUntil);
 }

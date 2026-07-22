@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Media.Animation;
 using LightPilot.App.ViewModels;
+using LightPilot.App.Services;
 
 namespace LightPilot.App;
 
@@ -10,6 +12,22 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        viewModel.PropertyChanged += ViewModel_PropertyChanged;
+    }
+
+    private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MainWindowViewModel.SelectedSurface) || ThemeService.IsReducedMotion)
+        {
+            return;
+        }
+
+        var duration = new Duration(TimeSpan.FromMilliseconds(160));
+        ContentHost.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, duration));
+        if (ContentHost.RenderTransform is System.Windows.Media.TranslateTransform translate)
+        {
+            translate.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty, new DoubleAnimation(8, 0, duration));
+        }
     }
 
     protected override void OnClosing(CancelEventArgs e)

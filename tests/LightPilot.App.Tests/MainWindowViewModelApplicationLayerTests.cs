@@ -1,6 +1,7 @@
 using LightPilot.Application;
 using LightPilot.App.ViewModels;
 using LightPilot.Core;
+using LightPilot.App.Presentation;
 
 namespace LightPilot.App.Tests;
 
@@ -22,6 +23,46 @@ public sealed class MainWindowViewModelApplicationLayerTests
         Assert.Equal(TimeSpan.FromMinutes(30), session.LastPauseDuration);
     }
 
+    [Fact]
+    public void ShellNavigationCommandSelectsEveryProductSurface()
+    {
+        var viewModel = new MainWindowViewModel(new StubComfortSession(), UserSettings.Default);
+
+        viewModel.SelectSurfaceCommand.Execute(ShellSurface.Learning);
+
+        Assert.Equal(ShellSurface.Learning, viewModel.SelectedSurface);
+        Assert.Equal("Learning", viewModel.CurrentSurface.Title);
+    }
+
+    [Fact]
+    public async Task FeedbackRaisesOsdSignalOnlyAfterSessionAcceptsIt()
+    {
+        var session = new StubComfortSession();
+        var viewModel = new MainWindowViewModel(session, UserSettings.Default);
+        var signal = new TaskCompletionSource<FeedbackPresentationEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);
+        viewModel.FeedbackApplied += (_, args) => signal.TrySetResult(args);
+
+        viewModel.TooBrightCommand.Execute(null);
+        var result = await signal.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(ComfortFeedback.TooBright, session.LastFeedback);
+        Assert.Equal("A little softer", result.Message);
+        Assert.True(result.CanUndo);
+    }
+
+    [Fact]
+    public void CancelingSystemDraftDiscardsChangesBeforeReopening()
+    {
+        var viewModel = new MainWindowViewModel(new StubComfortSession(), UserSettings.Default);
+        viewModel.SelectSurfaceCommand.Execute(ShellSurface.System);
+        viewModel.SettingsDraft!.ComfortIntensity = 90;
+
+        viewModel.CancelSettingsCommand.Execute(null);
+        viewModel.SelectSurfaceCommand.Execute(ShellSurface.System);
+
+        Assert.Equal(UserSettings.Default.ComfortIntensity, viewModel.SettingsDraft!.ComfortIntensity);
+    }
+
     private sealed class StubComfortSession : IComfortSession
     {
         event Action<ComfortRuntimeSnapshot>? IComfortSession.SnapshotChanged
@@ -32,6 +73,7 @@ public sealed class MainWindowViewModelApplicationLayerTests
         public UserSettings Settings { get; private set; } = UserSettings.Default;
         public ComfortRuntimeSnapshot CurrentSnapshot { get; private set; } = ComfortRuntimeSnapshot.Empty(DateTimeOffset.UtcNow);
         public TimeSpan? LastPauseDuration { get; private set; }
+        public ComfortFeedback? LastFeedback { get; private set; }
 
         public ValueTask StartAsync(UserSettings? initialSettings, CancellationToken cancellationToken) => ValueTask.CompletedTask;
         public ValueTask StopAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
@@ -46,7 +88,14 @@ public sealed class MainWindowViewModelApplicationLayerTests
         public ValueTask ResumeAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
         public ValueTask ResetDefaultsAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
         public ValueTask ResetComfortAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
-        public ValueTask ApplyFeedbackAsync(ComfortFeedback feedback, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public ValueTask ApplyFeedbackAsync(ComfortFeedback feedback, CancellationToken cancellationToken)
+        {
+            LastFeedback = feedback;
+            CurrentSnapshot = CurrentSnapshot with { FeedbackUndoAvailableUntil = DateTimeOffset.UtcNow.AddSeconds(10) };
+            return ValueTask.CompletedTask;
+        }
+        public ValueTask<OperationResult<ComfortRuntimeSnapshot>> UndoFeedbackAsync(CancellationToken cancellationToken) =>
+            ValueTask.FromResult(OperationResult<ComfortRuntimeSnapshot>.Failure(OperationStatus.Unavailable, "NoUndo"));
         public ValueTask ApplySettingsAsync(UserSettings settings, CancellationToken cancellationToken)
         {
             Settings = settings;

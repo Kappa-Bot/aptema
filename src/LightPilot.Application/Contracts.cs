@@ -67,7 +67,8 @@ public sealed record ComfortRuntimeSnapshot
         ComfortDecision? primaryDecision,
         DateTimeOffset? pausedUntil,
         LearningSummary learning,
-        SystemHealthState health)
+        SystemHealthState health,
+        DateTimeOffset? feedbackUndoAvailableUntil = null)
     {
         CapturedAt = capturedAt;
         AppContext = appContext;
@@ -77,6 +78,7 @@ public sealed record ComfortRuntimeSnapshot
         PausedUntil = pausedUntil;
         Learning = learning;
         Health = health;
+        FeedbackUndoAvailableUntil = feedbackUndoAvailableUntil;
     }
 
     public DateTimeOffset CapturedAt { get; init; }
@@ -87,6 +89,7 @@ public sealed record ComfortRuntimeSnapshot
     public DateTimeOffset? PausedUntil { get; init; }
     public LearningSummary Learning { get; init; }
     public SystemHealthState Health { get; init; }
+    public DateTimeOffset? FeedbackUndoAvailableUntil { get; init; }
 
     public static ComfortRuntimeSnapshot Empty(DateTimeOffset capturedAt) => new(
         capturedAt,
@@ -120,6 +123,11 @@ public sealed record FeedbackRequest(
     int CurrentBrightness,
     int CurrentColorTemperatureKelvin,
     TimeSpan ScreenSessionLength);
+
+public sealed record FeedbackUndoRequest(
+    UserSettings PreviousSettings,
+    IReadOnlyList<MonitorModel> Displays,
+    ComfortDecision PreviousDecision);
 
 public sealed record FeedbackOutcome
 {

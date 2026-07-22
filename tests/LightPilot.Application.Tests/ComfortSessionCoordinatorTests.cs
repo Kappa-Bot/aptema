@@ -54,6 +54,44 @@ public sealed class ComfortSessionCoordinatorTests
         await fixture.Session.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task UndoWithinTenSecondsRestoresLearningAndPreviousTarget()
+    {
+        var fixture = new SessionFixture();
+        await fixture.Session.StartAsync(UserSettings.Default, CancellationToken.None);
+        var before = fixture.Session.CurrentSnapshot.PrimaryDecision!;
+
+        await fixture.Session.ApplyFeedbackAsync(ComfortFeedback.TooBright, CancellationToken.None);
+        Assert.NotEmpty(fixture.Session.Settings.PreferenceLearning.Aggregates);
+        Assert.NotNull(fixture.Session.CurrentSnapshot.FeedbackUndoAvailableUntil);
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(9));
+        var result = await fixture.Session.UndoFeedbackAsync(CancellationToken.None);
+
+        Assert.True(result.IsUsable);
+        Assert.Empty(fixture.Session.Settings.PreferenceLearning.Aggregates);
+        Assert.Equal(before.TargetBrightnessPercent, fixture.Session.CurrentSnapshot.PrimaryDecision!.TargetBrightnessPercent);
+        Assert.Null(fixture.Session.CurrentSnapshot.FeedbackUndoAvailableUntil);
+        await fixture.Session.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task UndoAfterTenSecondsDoesNotChangeLearningOrOutput()
+    {
+        var fixture = new SessionFixture();
+        await fixture.Session.StartAsync(UserSettings.Default, CancellationToken.None);
+        await fixture.Session.ApplyFeedbackAsync(ComfortFeedback.TooBright, CancellationToken.None);
+        var writes = fixture.Output.Applied.Count;
+
+        fixture.Clock.Advance(TimeSpan.FromSeconds(11));
+        var result = await fixture.Session.UndoFeedbackAsync(CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Unavailable, result.Status);
+        Assert.NotEmpty(fixture.Session.Settings.PreferenceLearning.Aggregates);
+        Assert.Equal(writes, fixture.Output.Applied.Count);
+        await fixture.Session.StopAsync(CancellationToken.None);
+    }
+
     private sealed class SessionFixture
     {
         public SessionFixture()
@@ -88,8 +126,10 @@ public sealed class ComfortSessionCoordinatorTests
 
     private sealed class FixedClock : IClock
     {
-        public DateTimeOffset UtcNow { get; } = new(2026, 7, 22, 18, 0, 0, TimeSpan.Zero);
+        public DateTimeOffset UtcNow { get; private set; } = new(2026, 7, 22, 18, 0, 0, TimeSpan.Zero);
         public DateTimeOffset LocalNow => UtcNow;
+
+        public void Advance(TimeSpan duration) => UtcNow += duration;
     }
 
     private sealed class ManualAdaptiveScheduler : IAdaptiveScheduler

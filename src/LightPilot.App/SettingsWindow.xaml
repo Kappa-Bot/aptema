@@ -1,8 +1,8 @@
 <Window x:Class="LightPilot.App.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Light Pilot Settings"
-        Icon="Assets/LightPilot.ico"
+        Title="Aptema Settings"
+        Icon="Assets/Aptema.ico"
         Width="430"
         Height="610"
         MinWidth="400"
@@ -17,7 +17,7 @@
         </Grid.RowDefinitions>
 
         <DockPanel Grid.Row="0">
-            <Image DockPanel.Dock="Left" Source="Assets/LightPilotLogo.png" Width="36" Height="36" />
+            <Image DockPanel.Dock="Left" Source="Assets/Aptema-48.png" Width="36" Height="36" />
             <StackPanel Margin="10,0,0,0">
                 <TextBlock Text="Settings" FontSize="21" FontWeight="SemiBold" />
                 <TextBlock Text="Fine-tune only what you need" Foreground="{StaticResource MutedTextBrush}" />
@@ -27,15 +27,15 @@
         <ScrollViewer Grid.Row="1" Margin="0,14,0,16" VerticalScrollBarVisibility="Auto">
             <StackPanel>
                 <Border Padding="14"
-                        Background="{StaticResource PanelBackgroundBrush}"
+                        Background="{DynamicResource SurfaceBrush}"
                         BorderBrush="{StaticResource BorderBrushMuted}"
                         BorderThickness="1"
                         CornerRadius="8">
                     <StackPanel>
                         <TextBlock Text="Everyday" FontWeight="SemiBold" />
                         <CheckBox Margin="0,10,0,0"
-                                  Content="Open Light Pilot when Windows starts"
-                                  AutomationProperties.Name="Open Light Pilot when Windows starts"
+                                  Content="Open Aptema when Windows starts"
+                                  AutomationProperties.Name="Open Aptema when Windows starts"
                                   IsChecked="{Binding StartWithWindows, Mode=TwoWay}" />
 
                         <DockPanel Margin="0,14,0,4">
@@ -73,7 +73,7 @@
 
                 <Border Margin="0,12,0,0"
                         Padding="14"
-                        Background="{StaticResource PanelBackgroundBrush}"
+                        Background="{DynamicResource SurfaceBrush}"
                         BorderBrush="{StaticResource BorderBrushMuted}"
                         BorderThickness="1"
                         CornerRadius="8">
@@ -116,7 +116,7 @@
                 <Expander Margin="0,12,0,0" Header="Advanced" IsExpanded="False">
                     <StackPanel Margin="0,10,0,0">
                         <Border Padding="14"
-                                Background="{StaticResource PanelBackgroundBrush}"
+                                Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{StaticResource BorderBrushMuted}"
                                 BorderThickness="1"
                                 CornerRadius="8">

@@ -88,5 +88,6 @@ public interface IComfortSession
     ValueTask ResetDefaultsAsync(CancellationToken cancellationToken);
     ValueTask ResetComfortAsync(CancellationToken cancellationToken);
     ValueTask ApplyFeedbackAsync(ComfortFeedback feedback, CancellationToken cancellationToken);
+    ValueTask<OperationResult<ComfortRuntimeSnapshot>> UndoFeedbackAsync(CancellationToken cancellationToken);
     ValueTask ApplySettingsAsync(UserSettings settings, CancellationToken cancellationToken);
 }

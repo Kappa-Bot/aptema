@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using LightPilot.Application;
+using LightPilot.App.Presentation;
 using LightPilot.Core;
 
 namespace LightPilot.App.ViewModels;
@@ -13,14 +14,14 @@ public sealed class MainWindowViewModel : ObservableObject
     private ComfortProfileId _currentMode = ComfortProfileId.Auto;
     private int _brightnessPercent;
     private int _colorTemperatureKelvin;
-    private string _reason = "Starting Light Pilot";
+    private string _reason = "Aptema is preparing your comfort";
     private string _autoStatus = "Auto on";
     private string _transitionText = "";
     private string _displaySummary = "Displays protected";
     private string _nextAdaptationText = "Next check soon";
     private string? _feedbackConfirmation;
     private bool _startWithWindows;
-    private MainSurface _selectedSurface = MainSurface.Home;
+    private ShellSurface _selectedSurface = ShellSurface.Home;
     private SettingsViewModel? _settingsDraft;
 
     public MainWindowViewModel(IComfortSession session, UserSettings? initialSettings = null)
@@ -39,19 +40,27 @@ public sealed class MainWindowViewModel : ObservableObject
         ResumeCommand = new RelayCommand(() => _ = ExecuteAsync(token => _session.ResumeAsync(token)));
         ResetCommand = new RelayCommand(() => _ = ExecuteAsync(token => _session.ResetDefaultsAsync(token)));
         ResetComfortCommand = new RelayCommand(() => _ = ExecuteAsync(token => _session.ResetComfortAsync(token)));
-        TooBrightCommand = new RelayCommand(() => ApplyComfortFeedback(ComfortFeedback.TooBright));
-        TooDimCommand = new RelayCommand(() => ApplyComfortFeedback(ComfortFeedback.TooDim));
-        TooWarmCommand = new RelayCommand(() => ApplyComfortFeedback(ComfortFeedback.TooWarm));
-        TooColdCommand = new RelayCommand(() => ApplyComfortFeedback(ComfortFeedback.TooCold));
-        PerfectCommand = new RelayCommand(() => ApplyComfortFeedback(ComfortFeedback.Perfect));
+        TooBrightCommand = new RelayCommand(() => _ = ApplyComfortFeedbackAsync(ComfortFeedback.TooBright));
+        TooDimCommand = new RelayCommand(() => _ = ApplyComfortFeedbackAsync(ComfortFeedback.TooDim));
+        TooWarmCommand = new RelayCommand(() => _ = ApplyComfortFeedbackAsync(ComfortFeedback.TooWarm));
+        TooColdCommand = new RelayCommand(() => _ = ApplyComfortFeedbackAsync(ComfortFeedback.TooCold));
+        PerfectCommand = new RelayCommand(() => _ = ApplyComfortFeedbackAsync(ComfortFeedback.Perfect));
+        UndoFeedbackCommand = new RelayCommand(() => _ = UndoFeedbackAsync());
         SetCalmCommand = new RelayCommand(() => ComfortIntensity = 25);
         SetBalancedCommand = new RelayCommand(() => ComfortIntensity = 45);
         SetDeepComfortCommand = new RelayCommand(() => ComfortIntensity = 70);
         ShowHomeCommand = new RelayCommand(ShowHome);
         ShowQuickAdjustCommand = new RelayCommand(ShowQuickAdjust);
+        SelectSurfaceCommand = new RelayCommand(parameter =>
+        {
+            if (parameter is ShellSurface surface)
+            {
+                SelectSurface(surface);
+            }
+        });
         OpenSettingsCommand = new RelayCommand(ShowSettingsSurface);
         SaveSettingsCommand = new RelayCommand(SaveSettingsSurface);
-        CancelSettingsCommand = new RelayCommand(ShowHome);
+        CancelSettingsCommand = new RelayCommand(CancelSettingsSurface);
         ExitCommand = new RelayCommand(() => RequestExit?.Invoke(this, EventArgs.Empty));
 
         ProjectSnapshot(_runtimeSnapshot);
@@ -60,6 +69,8 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public event EventHandler? RequestExit;
     public event EventHandler<bool>? RequestStartupRegistrationChanged;
+    public event EventHandler? RequestQuickAdjust;
+    public event EventHandler<FeedbackPresentationEventArgs>? FeedbackApplied;
 
     public ObservableCollection<MonitorStatusViewModel> Monitors { get; }
 
@@ -76,11 +87,13 @@ public sealed class MainWindowViewModel : ObservableObject
     public RelayCommand TooWarmCommand { get; }
     public RelayCommand TooColdCommand { get; }
     public RelayCommand PerfectCommand { get; }
+    public RelayCommand UndoFeedbackCommand { get; }
     public RelayCommand SetCalmCommand { get; }
     public RelayCommand SetBalancedCommand { get; }
     public RelayCommand SetDeepComfortCommand { get; }
     public RelayCommand ShowHomeCommand { get; }
     public RelayCommand ShowQuickAdjustCommand { get; }
+    public RelayCommand SelectSurfaceCommand { get; }
     public RelayCommand OpenSettingsCommand { get; }
     public RelayCommand SaveSettingsCommand { get; }
     public RelayCommand CancelSettingsCommand { get; }
@@ -175,7 +188,9 @@ public sealed class MainWindowViewModel : ObservableObject
         private set => SetProperty(ref _nextAdaptationText, value);
     }
 
-    public MainSurface SelectedSurface
+    public IReadOnlyList<ShellNavigationItem> NavigationItems { get; } = ShellNavigation.Build();
+
+    public ShellSurface SelectedSurface
     {
         get => _selectedSurface;
         private set
@@ -185,13 +200,15 @@ public sealed class MainWindowViewModel : ObservableObject
                 OnPropertyChanged(nameof(HomeVisibility));
                 OnPropertyChanged(nameof(QuickAdjustVisibility));
                 OnPropertyChanged(nameof(SettingsVisibility));
+                OnPropertyChanged(nameof(CurrentSurface));
             }
         }
     }
 
-    public Visibility HomeVisibility => SelectedSurface == MainSurface.Home ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility QuickAdjustVisibility => SelectedSurface == MainSurface.QuickAdjust ? Visibility.Visible : Visibility.Collapsed;
-    public Visibility SettingsVisibility => SelectedSurface == MainSurface.Settings ? Visibility.Visible : Visibility.Collapsed;
+    public ShellNavigationItem CurrentSurface => ShellNavigation.Get(SelectedSurface);
+    public Visibility HomeVisibility => SelectedSurface == ShellSurface.Home ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility QuickAdjustVisibility => Visibility.Collapsed;
+    public Visibility SettingsVisibility => SelectedSurface == ShellSurface.System ? Visibility.Visible : Visibility.Collapsed;
 
     public SettingsViewModel? SettingsDraft
     {
@@ -202,6 +219,7 @@ public sealed class MainWindowViewModel : ObservableObject
     public string BrightnessText => ComfortCopy.DescribeLightLevel(BrightnessPercent);
     public string WarmthText => ComfortCopy.DescribeWarmth(ColorTemperatureKelvin);
     public string ComfortIntensityText => ComfortCopy.DescribeIntensity(ComfortIntensity);
+    public bool CanUndoFeedback => RuntimeSnapshot.FeedbackUndoAvailableUntil > DateTimeOffset.UtcNow;
 
     public string CurrentModeText => CurrentMode switch
     {
@@ -249,6 +267,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private void ProjectSnapshot(ComfortRuntimeSnapshot snapshot)
     {
         RuntimeSnapshot = snapshot;
+        OnPropertyChanged(nameof(CanUndoFeedback));
         _settings = _session.Settings;
         NotifySettingsChanged();
         ProjectDisplays(snapshot.Displays);
@@ -325,7 +344,7 @@ public sealed class MainWindowViewModel : ObservableObject
 
     private Task PauseAsync(TimeSpan duration) => ExecuteAsync(token => _session.PauseForAsync(duration, token));
 
-    private void ApplyComfortFeedback(ComfortFeedback feedback)
+    private async Task ApplyComfortFeedbackAsync(ComfortFeedback feedback)
     {
         _feedbackConfirmation = feedback switch
         {
@@ -333,10 +352,43 @@ public sealed class MainWindowViewModel : ObservableObject
             ComfortFeedback.TooDim => "Got it. Keeping it clearer.",
             ComfortFeedback.TooWarm => "Got it. Less warm.",
             ComfortFeedback.TooCold => "Got it. A little warmer.",
-            ComfortFeedback.Perfect => "Saved. Light Pilot will remember this.",
+            ComfortFeedback.Perfect => "Saved. Aptema will remember this.",
             _ => "Saved."
         };
-        _ = ExecuteAsync(token => _session.ApplyFeedbackAsync(feedback, token));
+        try
+        {
+            await _session.ApplyFeedbackAsync(feedback, CancellationToken.None).ConfigureAwait(false);
+            var message = feedback switch
+            {
+                ComfortFeedback.TooBright => "A little softer",
+                ComfortFeedback.TooDim => "A little clearer",
+                ComfortFeedback.TooWarm => "Less warm",
+                ComfortFeedback.TooCold => "A little warmer",
+                ComfortFeedback.Perfect => "Comfort remembered",
+                _ => "Comfort updated"
+            };
+            RunOnUi(() => FeedbackApplied?.Invoke(this, new FeedbackPresentationEventArgs(message, _session.CurrentSnapshot.FeedbackUndoAvailableUntil > DateTimeOffset.UtcNow)));
+        }
+        catch (Exception)
+        {
+            RunOnUi(() => Reason = "Comfort service unavailable; no changes applied");
+        }
+    }
+
+    private async Task UndoFeedbackAsync()
+    {
+        try
+        {
+            var result = await _session.UndoFeedbackAsync(CancellationToken.None).ConfigureAwait(false);
+            if (result.IsUsable)
+            {
+                RunOnUi(() => FeedbackApplied?.Invoke(this, new FeedbackPresentationEventArgs("Last adjustment undone", false)));
+            }
+        }
+        catch (Exception)
+        {
+            RunOnUi(() => Reason = "That adjustment could not be undone");
+        }
     }
 
     private void ApplySettingsToSession(UserSettings settings)
@@ -358,27 +410,44 @@ public sealed class MainWindowViewModel : ObservableObject
         }
     }
 
-    private void ShowHome() => SelectedSurface = MainSurface.Home;
-    private void ShowQuickAdjust() => SelectedSurface = MainSurface.QuickAdjust;
+    private void ShowHome() => SelectedSurface = ShellSurface.Home;
+    private void ShowQuickAdjust() => RequestQuickAdjust?.Invoke(this, EventArgs.Empty);
+
+    private void SelectSurface(ShellSurface surface)
+    {
+        if (surface == ShellSurface.System && SettingsDraft is null)
+        {
+            SettingsDraft = new SettingsViewModel(_settings, StartWithWindows);
+        }
+
+        SelectedSurface = surface;
+    }
 
     private void ShowSettingsSurface()
     {
         SettingsDraft = new SettingsViewModel(_settings, StartWithWindows);
-        SelectedSurface = MainSurface.Settings;
+        SelectedSurface = ShellSurface.System;
     }
 
     private void SaveSettingsSurface()
     {
         if (SettingsDraft is null)
         {
-            SelectedSurface = MainSurface.Home;
+            SelectedSurface = ShellSurface.Home;
             return;
         }
 
         var startWithWindows = SettingsDraft.StartWithWindows;
         ApplySettings(SettingsDraft.ToSettings(_settings), startWithWindows);
         RequestStartupRegistrationChanged?.Invoke(this, startWithWindows);
-        SelectedSurface = MainSurface.Home;
+        SettingsDraft = null;
+        SelectedSurface = ShellSurface.Home;
+    }
+
+    private void CancelSettingsSurface()
+    {
+        SettingsDraft = null;
+        SelectedSurface = ShellSurface.Home;
     }
 
     private void NotifySettingsChanged()
@@ -488,9 +557,4 @@ public sealed class MainWindowViewModel : ObservableObject
     }
 }
 
-public enum MainSurface
-{
-    Home,
-    QuickAdjust,
-    Settings
-}
+public sealed record FeedbackPresentationEventArgs(string Message, bool CanUndo);

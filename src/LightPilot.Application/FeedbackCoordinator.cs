@@ -63,4 +63,44 @@ public sealed class FeedbackCoordinator(
             ? OperationResult<FeedbackOutcome>.Degraded(outcome, "FeedbackPartiallyApplied")
             : OperationResult<FeedbackOutcome>.Succeeded(outcome);
     }
+
+    public async ValueTask<OperationResult<FeedbackOutcome>> UndoAsync(FeedbackUndoRequest request, CancellationToken cancellationToken)
+    {
+        var results = new List<BrightnessApplyResult>();
+        var degraded = false;
+        foreach (var display in request.Displays)
+        {
+            try
+            {
+                results.Add(await brightnessController.ApplyAsync(display, request.PreviousDecision, request.PreviousSettings, cancellationToken).ConfigureAwait(false));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                degraded = true;
+                results.Add(new BrightnessApplyResult(display.Id, BrightnessControlLayer.None, BrightnessControlLayer.None, MonitorControlState.Failed, "ApplyFailed"));
+            }
+        }
+
+        try
+        {
+            await settingsStore.SaveAsync(request.PreviousSettings, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            degraded = true;
+        }
+
+        var outcome = new FeedbackOutcome(request.PreviousSettings, request.PreviousDecision, results);
+        return degraded
+            ? OperationResult<FeedbackOutcome>.Degraded(outcome, "FeedbackUndoPartiallyApplied")
+            : OperationResult<FeedbackOutcome>.Succeeded(outcome);
+    }
 }

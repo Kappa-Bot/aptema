@@ -22,6 +22,8 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        ThemeService.ApplySystemTheme(Resources);
+        SystemParameters.StaticPropertyChanged += SystemParameters_StaticPropertyChanged;
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         if (!SingleInstanceGuard.TryAcquire(out _singleInstanceGuard))
@@ -87,11 +89,20 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        SystemParameters.StaticPropertyChanged -= SystemParameters_StaticPropertyChanged;
         _comfortSession?.StopAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
         _trayIcon?.Dispose();
         _overlayController?.Dispose();
         _singleInstanceGuard?.Dispose();
         base.OnExit(e);
+    }
+
+    private void SystemParameters_StaticPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SystemParameters.HighContrast))
+        {
+            ThemeService.ApplySystemTheme(Resources);
+        }
     }
 
     private void ShowSettingsWindow()

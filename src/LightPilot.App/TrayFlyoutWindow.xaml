@@ -1,0 +1,57 @@
+<Window x:Class="LightPilot.App.TrayFlyoutWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Aptema quick adjust"
+        Width="370"
+        SizeToContent="Height"
+        MaxHeight="620"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        AllowsTransparency="True"
+        Background="Transparent"
+        AutomationProperties.Name="Aptema quick adjust">
+    <Border Margin="8" Padding="22" CornerRadius="8" Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderBrushMuted}" BorderThickness="1">
+        <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="4" Opacity="0.22" /></Border.Effect>
+        <StackPanel>
+            <DockPanel>
+                <StackPanel>
+                    <TextBlock Text="Aptema" FontSize="20" FontWeight="SemiBold" />
+                    <TextBlock Text="Every screen, in balance." FontSize="12" Foreground="{DynamicResource MutedTextBrush}" />
+                </StackPanel>
+                <Image DockPanel.Dock="Right" Source="Assets/Aptema-48.png" Width="38" Height="38" />
+            </DockPanel>
+
+            <TextBlock Margin="0,22,0,0" Text="{Binding ComfortStateText}" FontSize="27" FontWeight="SemiBold" AutomationProperties.LiveSetting="Polite" />
+            <TextBlock Margin="0,5,0,0" Text="{Binding CurrentModeText}" FontSize="16" Foreground="{DynamicResource AccentBrush}" />
+            <TextBlock Margin="0,5,0,0" Text="{Binding Reason}" TextWrapping="Wrap" Foreground="{DynamicResource MutedTextBrush}" />
+            <TextBlock Margin="0,14,0,0" Text="{Binding DisplaySummary}" FontWeight="SemiBold" />
+
+            <UniformGrid Margin="0,22,0,0" Columns="2" Rows="2">
+                <Button Margin="0,0,5,5" Content="Too bright" Command="{Binding TooBrightCommand}" Style="{StaticResource QuietButton}" AutomationProperties.Name="Screen feels too bright" />
+                <Button Margin="5,0,0,5" Content="Too dim" Command="{Binding TooDimCommand}" Style="{StaticResource QuietButton}" AutomationProperties.Name="Screen feels too dim" />
+                <Button Margin="0,5,5,0" Content="Warmer" Command="{Binding TooColdCommand}" Style="{StaticResource QuietButton}" AutomationProperties.Name="Make light warmer" />
+                <Button Margin="5,5,0,0" Content="Cooler" Command="{Binding TooWarmCommand}" Style="{StaticResource QuietButton}" AutomationProperties.Name="Make light cooler" />
+            </UniformGrid>
+            <Button Margin="0,10,0,0" Content="Feels right" Command="{Binding PerfectCommand}" AutomationProperties.Name="Comfort feels right" />
+            <Button Margin="0,10,0,0" Content="Undo last adjustment" Command="{Binding UndoFeedbackCommand}">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource QuietButton}">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers><DataTrigger Binding="{Binding CanUndoFeedback}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+
+            <Separator Margin="0,18,0,14" Background="{DynamicResource BorderBrushMuted}" />
+            <Button Content="Pause or resume" Click="PauseOrResume_Click" Style="{StaticResource QuietButton}" AutomationProperties.Name="Pause or resume Aptema" />
+            <Grid Margin="0,10,0,0">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Content="Open Aptema" Click="Open_Click" Style="{StaticResource QuietButton}" />
+                <Button Grid.Column="2" Content="Settings" Click="Settings_Click" Style="{StaticResource QuietButton}" />
+            </Grid>
+        </StackPanel>
+    </Border>
+</Window>

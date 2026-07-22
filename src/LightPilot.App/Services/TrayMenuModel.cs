@@ -7,6 +7,8 @@ public enum TrayMenuCommandKey
     PauseUntilTomorrow,
     TooBright,
     TooDim,
+    Warmer,
+    Cooler,
     Perfect,
     Open,
     Settings,
@@ -42,9 +44,11 @@ public static class TrayMenuModelBuilder
             Separator(),
             new(TrayMenuCommandKey.TooBright, "Too bright"),
             new(TrayMenuCommandKey.TooDim, "Too dim"),
+            new(TrayMenuCommandKey.Warmer, "Warmer"),
+            new(TrayMenuCommandKey.Cooler, "Cooler"),
             new(TrayMenuCommandKey.Perfect, "Perfect"),
             Separator(),
-            new(TrayMenuCommandKey.Open, "Open Light Pilot"),
+            new(TrayMenuCommandKey.Open, "Open Aptema"),
             new(TrayMenuCommandKey.Settings, "Settings"),
             Separator(),
             new(TrayMenuCommandKey.Exit, "Exit")
@@ -69,10 +73,10 @@ public static class TrayMenuModelBuilder
     {
         if (string.IsNullOrWhiteSpace(value))
         {
-            return "Light Pilot";
+            return "Aptema";
         }
 
-        var text = $"Light Pilot - {value.Trim()}";
+        var text = $"Aptema - {value.Trim()}";
         if (text.Length <= NotifyIconTextLimit)
         {
             return text;
@@ -80,4 +84,36 @@ public static class TrayMenuModelBuilder
 
         return text[..Math.Max(0, NotifyIconTextLimit - 3)] + "...";
     }
+}
+
+public enum TrayIconState
+{
+    Active,
+    Paused,
+    Degraded,
+    Error
+}
+
+public static class TrayPresentation
+{
+    public static TrayIconState ResolveIconState(bool isPaused, bool isDegraded, bool hasError)
+    {
+        if (hasError)
+        {
+            return TrayIconState.Error;
+        }
+
+        if (isDegraded)
+        {
+            return TrayIconState.Degraded;
+        }
+
+        return isPaused ? TrayIconState.Paused : TrayIconState.Active;
+    }
+}
+
+public static class TrayNotificationPolicy
+{
+    public static bool ShouldNotify(TrayIconState previous, TrayIconState current) =>
+        previous != current && current is TrayIconState.Paused or TrayIconState.Degraded or TrayIconState.Error;
 }

@@ -19,12 +19,15 @@ public sealed class TrayMenuModelBuilderTests
                 TrayMenuCommandKey.PauseUntilTomorrow,
                 TrayMenuCommandKey.TooBright,
                 TrayMenuCommandKey.TooDim,
+                TrayMenuCommandKey.Warmer,
+                TrayMenuCommandKey.Cooler,
                 TrayMenuCommandKey.Perfect,
                 TrayMenuCommandKey.Open,
                 TrayMenuCommandKey.Settings,
                 TrayMenuCommandKey.Exit
             },
             items.Where(item => !item.IsSeparator).Select(item => item.CommandKey));
+        Assert.Contains(items, item => item.Text == "Open Aptema");
     }
 
     [Fact]
@@ -48,5 +51,26 @@ public sealed class TrayMenuModelBuilderTests
 
         Assert.DoesNotContain("Next", tooltip);
         Assert.Contains("Paused", tooltip);
+    }
+
+    [Theory]
+    [InlineData(false, false, false, TrayIconState.Active)]
+    [InlineData(true, false, false, TrayIconState.Paused)]
+    [InlineData(false, true, false, TrayIconState.Degraded)]
+    [InlineData(false, true, true, TrayIconState.Error)]
+    public void ResolvesTrayIconState(bool paused, bool degraded, bool error, TrayIconState expected)
+    {
+        Assert.Equal(expected, TrayPresentation.ResolveIconState(paused, degraded, error));
+    }
+
+    [Theory]
+    [InlineData(TrayIconState.Active, TrayIconState.Active, false)]
+    [InlineData(TrayIconState.Paused, TrayIconState.Paused, false)]
+    [InlineData(TrayIconState.Active, TrayIconState.Paused, true)]
+    [InlineData(TrayIconState.Degraded, TrayIconState.Error, true)]
+    [InlineData(TrayIconState.Paused, TrayIconState.Active, false)]
+    public void NotificationsOnlyFireForNewSignificantStates(TrayIconState previous, TrayIconState current, bool expected)
+    {
+        Assert.Equal(expected, TrayNotificationPolicy.ShouldNotify(previous, current));
     }
 }
