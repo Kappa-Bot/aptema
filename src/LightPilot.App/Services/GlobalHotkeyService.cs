@@ -35,7 +35,7 @@ public sealed class GlobalHotkeyService(IHotkeyRegistrar registrar) : IDisposabl
         _registered = registrar.Register(
             QuickAdjustId,
             HotkeyAction.QuickAdjust,
-            HotkeyModifiers.Windows | HotkeyModifiers.Alt,
+            HotkeyModifiers.Windows | HotkeyModifiers.Alt | HotkeyModifiers.NoRepeat,
             'A');
         return _registered
             ? OperationResult<HotkeyAction>.Succeeded(HotkeyAction.QuickAdjust)

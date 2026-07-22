@@ -25,7 +25,7 @@ public sealed class TrayCommandRouterTests
     {
         public string? LastAction { get; private set; }
         public void ToggleAuto() => LastAction = "ToggleAuto";
-        public void PauseThirtyMinutes() => LastAction = "Pause";
+        public void PauseOrResume() => LastAction = "PauseOrResume";
         public void PauseUntilTomorrow() => LastAction = "PauseTomorrow";
         public void TooBright() => LastAction = "TooBright";
         public void TooDim() => LastAction = "TooDim";
@@ -34,6 +34,7 @@ public sealed class TrayCommandRouterTests
         public void Perfect() => LastAction = "Perfect";
         public void Open() => LastAction = "Open";
         public void Settings() => LastAction = "Settings";
+        public void ShortcutHelp() => LastAction = "ShortcutHelp";
         public void Exit() => LastAction = "Exit";
     }
 }

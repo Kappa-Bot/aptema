@@ -24,7 +24,7 @@ public sealed class ComfortAutomationCoordinator(
             settings = settings with { AutoEnabled = false };
         }
 
-        var appContext = settings.AutoEnabled ? DetectContext(issues) : new AppContextModel("LightPilot.App", AppCategory.System, false);
+        var appContext = settings.AutoEnabled ? DetectContext(issues) : new AppContextModel("Aptema.exe", AppCategory.System, false);
         appContext = ApplyOverride(appContext, settings);
         var shouldSample = settings.EnableContentBrightnessAnalysis &&
             appContext.Category is AppCategory.Browser or AppCategory.EmailCommunication or AppCategory.OfficeReading;
@@ -65,9 +65,14 @@ public sealed class ComfortAutomationCoordinator(
                 }
             }
 
-            if (applyResult.State is MonitorControlState.Degraded or MonitorControlState.Failed or MonitorControlState.Unsupported)
+            if (applyResult.State is MonitorControlState.FallbackUsed or MonitorControlState.Degraded or MonitorControlState.Failed or MonitorControlState.Unsupported)
             {
                 issues.Add($"Display:{monitor.Id}:{applyResult.ReasonCode}");
+            }
+            else if (applyResult.State is MonitorControlState.NoChange or MonitorControlState.Throttled)
+            {
+                issues.AddRange(request.Previous?.Health.Issues.Where(issue =>
+                    issue.StartsWith($"Display:{monitor.Id}:", StringComparison.OrdinalIgnoreCase)) ?? []);
             }
 
             if (decision.ShouldApply)
@@ -91,7 +96,7 @@ public sealed class ComfortAutomationCoordinator(
             displays.FirstOrDefault()?.Decision,
             pausedUntil,
             LearningSummary.From(request.Settings),
-            new SystemHealthState(issues.Count > 0, issues));
+            new SystemHealthState(issues.Count > 0, issues.Distinct(StringComparer.OrdinalIgnoreCase)));
         return issues.Count == 0
             ? OperationResult<ComfortRuntimeSnapshot>.Succeeded(runtime)
             : OperationResult<ComfortRuntimeSnapshot>.Degraded(runtime, "ComfortRuntimeDegraded");

@@ -12,6 +12,7 @@
     <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#F0F5F3" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="SurfaceSubtleBrush" Color="#E7EFED" />
+    <SolidColorBrush x:Key="QuietHoverBrush" Color="#D5E4E0" />
     <SolidColorBrush x:Key="BorderBrushMuted" Color="#CEDBD7" />
     <SolidColorBrush x:Key="TextBrush" Color="#18211F" />
     <SolidColorBrush x:Key="MutedTextBrush" Color="#5A6965" />

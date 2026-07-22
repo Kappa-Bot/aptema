@@ -63,8 +63,34 @@ public sealed class MainWindowViewModelApplicationLayerTests
         Assert.Equal(UserSettings.Default.ComfortIntensity, viewModel.SettingsDraft!.ComfortIntensity);
     }
 
+    [Fact]
+    public void PrimaryActionResumesWhenPaused()
+    {
+        var session = new StubComfortSession(paused: true);
+        var viewModel = new MainWindowViewModel(session, UserSettings.Default);
+
+        viewModel.PauseResumeCommand.Execute(null);
+
+        Assert.True(session.ResumeCalled);
+        Assert.Equal("Resume", viewModel.PrimaryPauseText);
+    }
+
+    [Fact]
+    public void OwnProcessUsesAptemaHumanCopy()
+    {
+        Assert.Equal("Aptema", ApplicationDisplayNamePolicy.GetDisplayName("LightPilot.App.exe"));
+        Assert.Equal("Visual Studio Code", ApplicationDisplayNamePolicy.GetDisplayName("code.exe"));
+    }
+
     private sealed class StubComfortSession : IComfortSession
     {
+        public StubComfortSession(bool paused = false)
+        {
+            if (paused)
+            {
+                CurrentSnapshot = CurrentSnapshot with { PausedUntil = DateTimeOffset.UtcNow.AddMinutes(30) };
+            }
+        }
         event Action<ComfortRuntimeSnapshot>? IComfortSession.SnapshotChanged
         {
             add { }
@@ -74,6 +100,7 @@ public sealed class MainWindowViewModelApplicationLayerTests
         public ComfortRuntimeSnapshot CurrentSnapshot { get; private set; } = ComfortRuntimeSnapshot.Empty(DateTimeOffset.UtcNow);
         public TimeSpan? LastPauseDuration { get; private set; }
         public ComfortFeedback? LastFeedback { get; private set; }
+        public bool ResumeCalled { get; private set; }
 
         public ValueTask StartAsync(UserSettings? initialSettings, CancellationToken cancellationToken) => ValueTask.CompletedTask;
         public ValueTask StopAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
@@ -85,7 +112,11 @@ public sealed class MainWindowViewModelApplicationLayerTests
             return ValueTask.CompletedTask;
         }
         public ValueTask PauseUntilTomorrowAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
-        public ValueTask ResumeAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public ValueTask ResumeAsync(CancellationToken cancellationToken)
+        {
+            ResumeCalled = true;
+            return ValueTask.CompletedTask;
+        }
         public ValueTask ResetDefaultsAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
         public ValueTask ResetComfortAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
         public ValueTask ApplyFeedbackAsync(ComfortFeedback feedback, CancellationToken cancellationToken)

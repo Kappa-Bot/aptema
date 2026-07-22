@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.IO;
 using System.Windows;
+using LightPilot.App.Presentation;
 using LightPilot.App.ViewModels;
 using LightPilot.Core;
 using Drawing = System.Drawing;
@@ -19,6 +20,8 @@ public sealed class TrayIconService : IDisposable
     private readonly OsdWindow _osd = new();
     private readonly HotkeyHost _hotkeyHost = new();
     private TrayIconState? _lastIconState;
+    private TrayNotificationIdentity? _lastNotificationIdentity;
+    private DateTimeOffset? _lastNotifiedAt;
     private bool _disposed;
 
     public TrayIconService(MainWindowViewModel viewModel, Window window)
@@ -26,8 +29,6 @@ public sealed class TrayIconService : IDisposable
         _viewModel = viewModel;
         _window = window;
         _icons = LoadIcons();
-        _router = new TrayCommandRouter(new CommandTarget(this));
-        _flyout = new TrayFlyoutWindow(viewModel, _router);
         _notifyIcon = new Forms.NotifyIcon
         {
             Icon = _icons[TrayIconState.Active],
@@ -35,12 +36,15 @@ public sealed class TrayIconService : IDisposable
             Visible = true,
             ContextMenuStrip = new Forms.ContextMenuStrip()
         };
+        _router = new TrayCommandRouter(new CommandTarget(this));
+        _flyout = new TrayFlyoutWindow(viewModel, _router, size => NativeWindowPlacement.PlaceFlyout(_notifyIcon, size));
         _notifyIcon.MouseClick += NotifyIcon_MouseClick;
         _notifyIcon.DoubleClick += (_, _) => ShowWindow();
         _viewModel.PropertyChanged += ViewModel_PropertyChanged;
         _viewModel.RequestQuickAdjust += ViewModel_RequestQuickAdjust;
         _viewModel.FeedbackApplied += ViewModel_FeedbackApplied;
         _hotkeyHost.Invoked += HotkeyHost_Invoked;
+        _viewModel.SetQuickAdjustShortcutAvailability(_hotkeyHost.Registration.Status != LightPilot.Application.OperationStatus.Conflict);
         RefreshPresentation(notifySignificantChange: false);
     }
 
@@ -107,6 +111,7 @@ public sealed class TrayIconService : IDisposable
     {
         var state = BuildState();
         var iconState = ResolveIconState();
+        var identity = BuildNotificationIdentity(iconState);
         _notifyIcon.ContextMenuStrip?.Items.Clear();
         foreach (var item in TrayMenuModelBuilder.Build(state))
         {
@@ -127,9 +132,12 @@ public sealed class TrayIconService : IDisposable
 
         _notifyIcon.Text = TrayMenuModelBuilder.BuildTooltip(state);
         _notifyIcon.Icon = _icons[iconState];
-        if (notifySignificantChange && _lastIconState is { } previous && TrayNotificationPolicy.ShouldNotify(previous, iconState))
+        var now = DateTimeOffset.UtcNow;
+        if (notifySignificantChange && TrayNotificationPolicy.ShouldNotify(_lastNotificationIdentity, identity, _lastNotifiedAt, now))
         {
             NotifyStateChange(iconState);
+            _lastNotificationIdentity = identity;
+            _lastNotifiedAt = now;
         }
 
         _lastIconState = iconState;
@@ -140,7 +148,14 @@ public sealed class TrayIconService : IDisposable
         !_viewModel.AutoEnabled || _viewModel.RuntimeSnapshot.PausedUntil is not null,
         _viewModel.ComfortStateText,
         _viewModel.CurrentModeText,
-        _viewModel.NextAdaptationText);
+        _viewModel.NextAdaptationText,
+        _viewModel.ShortcutAvailable);
+
+    private TrayNotificationIdentity BuildNotificationIdentity(TrayIconState state)
+    {
+        var issues = string.Join('|', _viewModel.RuntimeSnapshot.Health.Issues.Order(StringComparer.OrdinalIgnoreCase));
+        return new TrayNotificationIdentity(state, issues);
+    }
 
     private TrayIconState ResolveIconState()
     {
@@ -227,7 +242,7 @@ public sealed class TrayIconService : IDisposable
     private sealed class CommandTarget(TrayIconService owner) : ITrayCommandTarget
     {
         public void ToggleAuto() => owner._viewModel.ToggleAutoCommand.Execute(null);
-        public void PauseThirtyMinutes() => owner._viewModel.PauseThirtyMinutesCommand.Execute(null);
+        public void PauseOrResume() => owner._viewModel.PauseResumeCommand.Execute(null);
         public void PauseUntilTomorrow() => owner._viewModel.PauseUntilTomorrowCommand.Execute(null);
         public void TooBright() => owner._viewModel.TooBrightCommand.Execute(null);
         public void TooDim() => owner._viewModel.TooDimCommand.Execute(null);
@@ -236,6 +251,11 @@ public sealed class TrayIconService : IDisposable
         public void Perfect() => owner._viewModel.PerfectCommand.Execute(null);
         public void Open() => owner.ShowWindow();
         public void Settings()
+        {
+            owner._viewModel.OpenSettingsCommand.Execute(null);
+            owner.ShowWindow();
+        }
+        public void ShortcutHelp()
         {
             owner._viewModel.OpenSettingsCommand.Execute(null);
             owner.ShowWindow();

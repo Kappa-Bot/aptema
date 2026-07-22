@@ -12,11 +12,12 @@
     <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#151F1D" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="#1B2623" />
     <SolidColorBrush x:Key="SurfaceSubtleBrush" Color="#23332F" />
+    <SolidColorBrush x:Key="QuietHoverBrush" Color="#30443F" />
     <SolidColorBrush x:Key="BorderBrushMuted" Color="#344641" />
     <SolidColorBrush x:Key="TextBrush" Color="#F6F2E9" />
     <SolidColorBrush x:Key="MutedTextBrush" Color="#B8C7C2" />
-    <SolidColorBrush x:Key="AccentBrush" Color="#1A7478" />
-    <SolidColorBrush x:Key="AccentHoverBrush" Color="#238F93" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#123F43" />
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#145E62" />
     <SolidColorBrush x:Key="AccentTextBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="WarmAccentBrush" Color="#D7A24B" />
     <SolidColorBrush x:Key="FocusBrush" Color="#D7A24B" />

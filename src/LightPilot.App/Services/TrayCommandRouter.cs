@@ -3,7 +3,7 @@ namespace LightPilot.App.Services;
 public interface ITrayCommandTarget
 {
     void ToggleAuto();
-    void PauseThirtyMinutes();
+    void PauseOrResume();
     void PauseUntilTomorrow();
     void TooBright();
     void TooDim();
@@ -12,6 +12,7 @@ public interface ITrayCommandTarget
     void Perfect();
     void Open();
     void Settings();
+    void ShortcutHelp();
     void Exit();
 }
 
@@ -22,7 +23,7 @@ public sealed class TrayCommandRouter(ITrayCommandTarget target)
         switch (command)
         {
             case TrayMenuCommandKey.ToggleAuto: target.ToggleAuto(); break;
-            case TrayMenuCommandKey.PauseThirtyMinutes: target.PauseThirtyMinutes(); break;
+            case TrayMenuCommandKey.PauseOrResume: target.PauseOrResume(); break;
             case TrayMenuCommandKey.PauseUntilTomorrow: target.PauseUntilTomorrow(); break;
             case TrayMenuCommandKey.TooBright: target.TooBright(); break;
             case TrayMenuCommandKey.TooDim: target.TooDim(); break;
@@ -31,6 +32,7 @@ public sealed class TrayCommandRouter(ITrayCommandTarget target)
             case TrayMenuCommandKey.Perfect: target.Perfect(); break;
             case TrayMenuCommandKey.Open: target.Open(); break;
             case TrayMenuCommandKey.Settings: target.Settings(); break;
+            case TrayMenuCommandKey.ShortcutHelp: target.ShortcutHelp(); break;
             case TrayMenuCommandKey.Exit: target.Exit(); break;
         }
     }

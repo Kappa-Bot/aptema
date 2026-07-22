@@ -5,6 +5,7 @@
         SizeToContent="Height"
         WindowStyle="None"
         ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
         ShowInTaskbar="False"
         ShowActivated="False"
         Topmost="True"

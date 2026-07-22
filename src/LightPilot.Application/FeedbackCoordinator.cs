@@ -67,12 +67,17 @@ public sealed class FeedbackCoordinator(
     public async ValueTask<OperationResult<FeedbackOutcome>> UndoAsync(FeedbackUndoRequest request, CancellationToken cancellationToken)
     {
         var results = new List<BrightnessApplyResult>();
-        var degraded = false;
         foreach (var display in request.Displays)
         {
+            BrightnessApplyResult result;
             try
             {
-                results.Add(await brightnessController.ApplyAsync(display, request.PreviousDecision, request.PreviousSettings, cancellationToken).ConfigureAwait(false));
+                result = await brightnessController.ApplyAsync(display, request.PreviousDecision, request.PreviousSettings, cancellationToken).ConfigureAwait(false);
+                if (!IsVisibleApply(result) && result.State != MonitorControlState.Disabled && brightnessController is IUndoBrightnessController undoController)
+                {
+                    result = await undoController.ApplyUndoAsync(
+                        display, request.PreviousDecision, request.PreviousSettings, result.SuppressedUntil, cancellationToken).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -80,9 +85,15 @@ public sealed class FeedbackCoordinator(
             }
             catch (Exception)
             {
-                degraded = true;
-                results.Add(new BrightnessApplyResult(display.Id, BrightnessControlLayer.None, BrightnessControlLayer.None, MonitorControlState.Failed, "ApplyFailed"));
+                result = new BrightnessApplyResult(display.Id, BrightnessControlLayer.None, BrightnessControlLayer.None, MonitorControlState.Failed, "ApplyFailed");
             }
+
+            results.Add(result);
+        }
+
+        if (request.Displays.Count == 0 || results.Any(result => result.State != MonitorControlState.Disabled && !IsVisibleApply(result)))
+        {
+            return OperationResult<FeedbackOutcome>.Failure(OperationStatus.Unavailable, "FeedbackUndoNotVisible");
         }
 
         try
@@ -95,12 +106,13 @@ public sealed class FeedbackCoordinator(
         }
         catch (Exception)
         {
-            degraded = true;
+            return OperationResult<FeedbackOutcome>.Failure(OperationStatus.Unavailable, "FeedbackUndoSettingsUnavailable");
         }
 
         var outcome = new FeedbackOutcome(request.PreviousSettings, request.PreviousDecision, results);
-        return degraded
-            ? OperationResult<FeedbackOutcome>.Degraded(outcome, "FeedbackUndoPartiallyApplied")
-            : OperationResult<FeedbackOutcome>.Succeeded(outcome);
+        return OperationResult<FeedbackOutcome>.Succeeded(outcome);
     }
+
+    private static bool IsVisibleApply(BrightnessApplyResult result) =>
+        result.UsedHardware || result.UsedOverlay;
 }

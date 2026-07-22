@@ -16,7 +16,7 @@ public sealed class GlobalHotkeyServiceTests
         Assert.Equal(OperationStatus.Success, result.Status);
         var call = Assert.Single(registrar.Registrations);
         Assert.Equal(HotkeyAction.QuickAdjust, call.Action);
-        Assert.Equal(HotkeyModifiers.Windows | HotkeyModifiers.Alt, call.Modifiers);
+        Assert.Equal(HotkeyModifiers.Windows | HotkeyModifiers.Alt | HotkeyModifiers.NoRepeat, call.Modifiers);
         Assert.Equal('A', call.VirtualKey);
     }
 

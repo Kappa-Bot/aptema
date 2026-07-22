@@ -5,7 +5,6 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using LightPilot.App.Presentation;
 using LightPilot.Application;
-using Forms = System.Windows.Forms;
 
 namespace LightPilot.App;
 
@@ -48,12 +47,18 @@ public partial class OsdWindow : Window
         _presentation.Show(message, canUndo);
         UndoButton.Visibility = canUndo ? Visibility.Visible : Visibility.Collapsed;
         _undo = canUndo ? undo : null;
-        var cursor = Forms.Cursor.Position;
-        var area = Forms.Screen.FromPoint(cursor).WorkingArea;
+        Opacity = 0;
         Show();
+        UpdateLayout();
         var dpi = VisualTreeHelper.GetDpi(this);
-        Left = area.Right / dpi.DpiScaleX - ActualWidth - 18;
-        Top = area.Top / dpi.DpiScaleY + 18;
+        var width = ActualWidth > 0 ? ActualWidth : Width;
+        var height = ActualHeight > 0 ? ActualHeight : DesiredSize.Height;
+        var point = NativeWindowPlacement.PlaceOsd(new PixelSize(
+            (int)Math.Ceiling(width * dpi.DpiScaleX),
+            (int)Math.Ceiling(height * dpi.DpiScaleY)));
+        Left = point.X / dpi.DpiScaleX;
+        Top = point.Y / dpi.DpiScaleY;
+        Opacity = 1;
         _hideTimer.Stop();
         _hideTimer.Start();
     }

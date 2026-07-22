@@ -4,6 +4,7 @@
     <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="{x:Static SystemColors.ControlColor}" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="{x:Static SystemColors.WindowColor}" />
     <SolidColorBrush x:Key="SurfaceSubtleBrush" Color="{x:Static SystemColors.ControlColor}" />
+    <SolidColorBrush x:Key="QuietHoverBrush" Color="{x:Static SystemColors.ControlColor}" />
     <SolidColorBrush x:Key="BorderBrushMuted" Color="{x:Static SystemColors.WindowTextColor}" />
     <SolidColorBrush x:Key="TextBrush" Color="{x:Static SystemColors.WindowTextColor}" />
     <SolidColorBrush x:Key="MutedTextBrush" Color="{x:Static SystemColors.GrayTextColor}" />

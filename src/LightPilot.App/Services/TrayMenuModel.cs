@@ -3,7 +3,7 @@ namespace LightPilot.App.Services;
 public enum TrayMenuCommandKey
 {
     ToggleAuto,
-    PauseThirtyMinutes,
+    PauseOrResume,
     PauseUntilTomorrow,
     TooBright,
     TooDim,
@@ -12,6 +12,7 @@ public enum TrayMenuCommandKey
     Perfect,
     Open,
     Settings,
+    ShortcutHelp,
     Exit
 }
 
@@ -20,7 +21,8 @@ public sealed record TrayMenuState(
     bool IsPaused,
     string ComfortState,
     string Mode,
-    string NextAdaptationText);
+    string NextAdaptationText,
+    bool ShortcutAvailable = true);
 
 public sealed record TrayMenuItemModel(
     TrayMenuCommandKey CommandKey,
@@ -39,7 +41,7 @@ public static class TrayMenuModelBuilder
         [
             new(TrayMenuCommandKey.ToggleAuto, state.AutoEnabled ? "Auto on" : "Auto off", state.AutoEnabled),
             Separator(),
-            new(TrayMenuCommandKey.PauseThirtyMinutes, "Pause 30 min"),
+            new(TrayMenuCommandKey.PauseOrResume, state.IsPaused ? "Resume" : "Pause 30 min"),
             new(TrayMenuCommandKey.PauseUntilTomorrow, "Pause until tomorrow"),
             Separator(),
             new(TrayMenuCommandKey.TooBright, "Too bright"),
@@ -48,6 +50,9 @@ public static class TrayMenuModelBuilder
             new(TrayMenuCommandKey.Cooler, "Cooler"),
             new(TrayMenuCommandKey.Perfect, "Perfect"),
             Separator(),
+            ..(!state.ShortcutAvailable
+                ? new[] { new TrayMenuItemModel(TrayMenuCommandKey.ShortcutHelp, "Quick Adjust shortcut unavailable") }
+                : Array.Empty<TrayMenuItemModel>()),
             new(TrayMenuCommandKey.Open, "Open Aptema"),
             new(TrayMenuCommandKey.Settings, "Settings"),
             Separator(),
@@ -112,8 +117,18 @@ public static class TrayPresentation
     }
 }
 
+public sealed record TrayNotificationIdentity(TrayIconState State, string HealthIdentity);
+
 public static class TrayNotificationPolicy
 {
-    public static bool ShouldNotify(TrayIconState previous, TrayIconState current) =>
-        previous != current && current is TrayIconState.Paused or TrayIconState.Degraded or TrayIconState.Error;
+    private static readonly TimeSpan Cooldown = TimeSpan.FromMinutes(2);
+
+    public static bool ShouldNotify(
+        TrayNotificationIdentity? previous,
+        TrayNotificationIdentity current,
+        DateTimeOffset? lastNotifiedAt,
+        DateTimeOffset now) =>
+        current.State is TrayIconState.Paused or TrayIconState.Degraded or TrayIconState.Error
+        && previous != current
+        && (lastNotifiedAt is null || now - lastNotifiedAt >= Cooldown);
 }

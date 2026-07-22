@@ -15,7 +15,7 @@ public sealed class TrayMenuModelBuilderTests
             new[]
             {
                 TrayMenuCommandKey.ToggleAuto,
-                TrayMenuCommandKey.PauseThirtyMinutes,
+                TrayMenuCommandKey.PauseOrResume,
                 TrayMenuCommandKey.PauseUntilTomorrow,
                 TrayMenuCommandKey.TooBright,
                 TrayMenuCommandKey.TooDim,
@@ -53,6 +53,15 @@ public sealed class TrayMenuModelBuilderTests
         Assert.Contains("Paused", tooltip);
     }
 
+    [Fact]
+    public void PausedTrayOffersResumeInsteadOfAnotherPause()
+    {
+        var items = TrayMenuModelBuilder.Build(new TrayMenuState(true, true, "Paused", "Pause", "Soon"));
+
+        var action = Assert.Single(items, item => item.CommandKey == TrayMenuCommandKey.PauseOrResume);
+        Assert.Equal("Resume", action.Text);
+    }
+
     [Theory]
     [InlineData(false, false, false, TrayIconState.Active)]
     [InlineData(true, false, false, TrayIconState.Paused)]
@@ -71,6 +80,31 @@ public sealed class TrayMenuModelBuilderTests
     [InlineData(TrayIconState.Paused, TrayIconState.Active, false)]
     public void NotificationsOnlyFireForNewSignificantStates(TrayIconState previous, TrayIconState current, bool expected)
     {
-        Assert.Equal(expected, TrayNotificationPolicy.ShouldNotify(previous, current));
+        var now = new DateTimeOffset(2026, 7, 22, 12, 0, 0, TimeSpan.Zero);
+        var oldIdentity = new TrayNotificationIdentity(previous, previous.ToString());
+        var newIdentity = new TrayNotificationIdentity(current, current.ToString());
+        Assert.Equal(expected, TrayNotificationPolicy.ShouldNotify(oldIdentity, newIdentity, now.AddMinutes(-3), now));
+    }
+
+    [Fact]
+    public void NotificationCooldownDeduplicatesSameHealthIdentity()
+    {
+        var now = new DateTimeOffset(2026, 7, 22, 12, 0, 0, TimeSpan.Zero);
+        var identity = new TrayNotificationIdentity(TrayIconState.Degraded, "display-1:ddc");
+
+        Assert.False(TrayNotificationPolicy.ShouldNotify(identity, identity, now.AddMinutes(-5), now));
+        Assert.False(TrayNotificationPolicy.ShouldNotify(
+            new TrayNotificationIdentity(TrayIconState.Degraded, "display-1:old"),
+            identity,
+            now.AddSeconds(-30),
+            now));
+    }
+
+    [Fact]
+    public void ShortcutConflictAddsHumanHelpAction()
+    {
+        var items = TrayMenuModelBuilder.Build(new TrayMenuState(true, false, "Comfortable", "Day", "Soon", ShortcutAvailable: false));
+
+        Assert.Contains(items, item => item.CommandKey == TrayMenuCommandKey.ShortcutHelp && item.Text.Contains("shortcut", StringComparison.OrdinalIgnoreCase));
     }
 }

@@ -34,6 +34,16 @@ public interface IBrightnessController
     ValueTask<BrightnessApplyResult> ApplyAsync(MonitorModel monitor, ComfortDecision decision, UserSettings settings, CancellationToken cancellationToken);
 }
 
+public interface IUndoBrightnessController
+{
+    ValueTask<BrightnessApplyResult> ApplyUndoAsync(
+        MonitorModel monitor,
+        ComfortDecision decision,
+        UserSettings settings,
+        DateTimeOffset? retryAfter,
+        CancellationToken cancellationToken);
+}
+
 public interface IForegroundWindowDetector
 {
     AppContextModel Detect();

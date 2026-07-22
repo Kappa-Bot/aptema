@@ -1,8 +1,9 @@
+using LightPilot.Application;
 using LightPilot.Core;
 
 namespace LightPilot.Infrastructure;
 
-public sealed class BrightnessController : IBrightnessController
+public sealed class BrightnessController : IBrightnessController, IUndoBrightnessController
 {
     private static readonly TimeSpan MinimumWriteInterval = TimeSpan.FromSeconds(2);
 
@@ -10,15 +11,22 @@ public sealed class BrightnessController : IBrightnessController
     private readonly IWindowsBrightnessApi _windowsBrightnessApi;
     private readonly IOverlayController _overlayController;
     private readonly TimeProvider _timeProvider;
+    private readonly IAdaptiveScheduler _scheduler;
     private readonly Dictionary<string, DateTimeOffset> _lastWrites = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DdcFailureState> _ddcFailures = new(StringComparer.OrdinalIgnoreCase);
 
-    public BrightnessController(IDdcCiApi ddcCiApi, IWindowsBrightnessApi windowsBrightnessApi, IOverlayController overlayController, TimeProvider? timeProvider = null)
+    public BrightnessController(
+        IDdcCiApi ddcCiApi,
+        IWindowsBrightnessApi windowsBrightnessApi,
+        IOverlayController overlayController,
+        TimeProvider? timeProvider = null,
+        IAdaptiveScheduler? scheduler = null)
     {
         _ddcCiApi = ddcCiApi;
         _windowsBrightnessApi = windowsBrightnessApi;
         _overlayController = overlayController;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _scheduler = scheduler ?? new TimeProviderAdaptiveScheduler(_timeProvider);
     }
 
     public async ValueTask<BrightnessApplyResult> ApplyAsync(MonitorModel monitor, ComfortDecision decision, UserSettings settings, CancellationToken cancellationToken)
@@ -38,7 +46,13 @@ public sealed class BrightnessController : IBrightnessController
         var now = _timeProvider.GetUtcNow();
         if (_lastWrites.TryGetValue(monitor.Id, out var lastWrite) && now - lastWrite < MinimumWriteInterval)
         {
-            return Result(monitor, BrightnessControlLayer.None, BrightnessControlLayer.None, MonitorControlState.Throttled, "WriteThrottled");
+            return Result(
+                monitor,
+                BrightnessControlLayer.None,
+                BrightnessControlLayer.None,
+                MonitorControlState.Throttled,
+                "WriteThrottled",
+                lastWrite + MinimumWriteInterval);
         }
 
         var brightness = ClampBrightness(monitor, settings, decision.TargetBrightnessPercent);
@@ -115,6 +129,52 @@ public sealed class BrightnessController : IBrightnessController
             ddcState?.SuppressedUntil,
             usedHardware: false,
             usedOverlay: true);
+    }
+
+    public async ValueTask<BrightnessApplyResult> ApplyUndoAsync(
+        MonitorModel monitor,
+        ComfortDecision decision,
+        UserSettings settings,
+        DateTimeOffset? retryAfter,
+        CancellationToken cancellationToken)
+    {
+        if (IsMonitorDisabled(monitor, settings))
+        {
+            return Result(monitor, BrightnessControlLayer.None, BrightnessControlLayer.None, MonitorControlState.Disabled, "MonitorDisabled");
+        }
+
+        var nextAttempt = retryAfter;
+        if (nextAttempt is null && _lastWrites.TryGetValue(monitor.Id, out var lastWrite))
+        {
+            nextAttempt = lastWrite + MinimumWriteInterval;
+        }
+
+        await WaitUntilAsync(nextAttempt, cancellationToken).ConfigureAwait(false);
+        var result = await ApplyAsync(monitor, decision, settings, cancellationToken).ConfigureAwait(false);
+        if (result.State != MonitorControlState.Throttled)
+        {
+            return result;
+        }
+
+        await WaitUntilAsync(result.SuppressedUntil, cancellationToken).ConfigureAwait(false);
+        return await ApplyAsync(monitor, decision, settings, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask WaitUntilAsync(DateTimeOffset? requestedAt, CancellationToken cancellationToken)
+    {
+        if (requestedAt is not { } retryAt)
+        {
+            return;
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        var delay = retryAt - now;
+        if (delay <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        await _scheduler.DelayAsync(delay < MinimumWriteInterval ? delay : MinimumWriteInterval, cancellationToken).ConfigureAwait(false);
     }
 
     private static bool IsMonitorDisabled(MonitorModel monitor, UserSettings settings)

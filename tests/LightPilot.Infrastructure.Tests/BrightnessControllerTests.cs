@@ -1,3 +1,4 @@
+using LightPilot.Application;
 using LightPilot.Core;
 using LightPilot.Infrastructure;
 
@@ -68,6 +69,27 @@ public sealed class BrightnessControllerTests
         Assert.Equal(1, ddc.WriteCount);
         Assert.Equal(50, ddc.LastBrightness);
         Assert.Equal(MonitorControlState.Throttled, result.State);
+        Assert.Equal(time.GetUtcNow().AddSeconds(1), result.SuppressedUntil);
+    }
+
+    [Fact]
+    public async Task ImmediateUndoWaitsForThrottleThenRestoresHardwareAndOverlay()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 5, 7, 12, 0, 0, TimeSpan.Zero));
+        var ddc = new FakeDdcCiApi(canSet: true);
+        var overlay = new FakeOverlayController();
+        var scheduler = new AdvancingScheduler(time);
+        var controller = new BrightnessController(ddc, new FakeWindowsBrightnessApi(canSet: true), overlay, time, scheduler);
+        await controller.ApplyAsync(Monitor, Decision(50, overlayOpacity: 0.04), UserSettings.Default, CancellationToken.None);
+
+        var result = await controller.ApplyUndoAsync(Monitor, Decision(55, overlayOpacity: 0.12), UserSettings.Default, null, CancellationToken.None);
+
+        Assert.Equal(MonitorControlState.Ready, result.State);
+        Assert.True(result.UsedHardware);
+        Assert.True(result.UsedOverlay);
+        Assert.Equal(55, ddc.LastBrightness);
+        Assert.Equal(0.12, overlay.LastOpacity);
+        Assert.Equal(TimeSpan.FromSeconds(2), Assert.Single(scheduler.Delays));
     }
 
     [Fact]
@@ -244,5 +266,17 @@ internal sealed class FakeTimeProvider(DateTimeOffset start) : TimeProvider
     public void Advance(TimeSpan by)
     {
         _now += by;
+    }
+}
+
+internal sealed class AdvancingScheduler(FakeTimeProvider timeProvider) : IAdaptiveScheduler
+{
+    public List<TimeSpan> Delays { get; } = [];
+
+    public ValueTask DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        Delays.Add(delay);
+        timeProvider.Advance(delay);
+        return ValueTask.CompletedTask;
     }
 }

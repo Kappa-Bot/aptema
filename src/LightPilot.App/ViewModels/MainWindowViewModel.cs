@@ -37,6 +37,12 @@ public sealed class MainWindowViewModel : ObservableObject
         PauseThirtyMinutesCommand = new RelayCommand(() => _ = PauseAsync(TimeSpan.FromMinutes(30)));
         PauseOneHourCommand = new RelayCommand(() => _ = PauseAsync(TimeSpan.FromHours(1)));
         PauseUntilTomorrowCommand = new RelayCommand(() => _ = ExecuteAsync(token => _session.PauseUntilTomorrowAsync(token)));
+        PauseResumeCommand = new RelayCommand(() =>
+        {
+            _ = IsPaused
+                ? ExecuteAsync(token => _session.ResumeAsync(token))
+                : PauseAsync(TimeSpan.FromMinutes(30));
+        });
         ResumeCommand = new RelayCommand(() => _ = ExecuteAsync(token => _session.ResumeAsync(token)));
         ResetCommand = new RelayCommand(() => _ = ExecuteAsync(token => _session.ResetDefaultsAsync(token)));
         ResetComfortCommand = new RelayCommand(() => _ = ExecuteAsync(token => _session.ResetComfortAsync(token)));
@@ -79,6 +85,7 @@ public sealed class MainWindowViewModel : ObservableObject
     public RelayCommand PauseThirtyMinutesCommand { get; }
     public RelayCommand PauseOneHourCommand { get; }
     public RelayCommand PauseUntilTomorrowCommand { get; }
+    public RelayCommand PauseResumeCommand { get; }
     public RelayCommand ResumeCommand { get; }
     public RelayCommand ResetCommand { get; }
     public RelayCommand ResetComfortCommand { get; }
@@ -220,6 +227,25 @@ public sealed class MainWindowViewModel : ObservableObject
     public string WarmthText => ComfortCopy.DescribeWarmth(ColorTemperatureKelvin);
     public string ComfortIntensityText => ComfortCopy.DescribeIntensity(ComfortIntensity);
     public bool CanUndoFeedback => RuntimeSnapshot.FeedbackUndoAvailableUntil > DateTimeOffset.UtcNow;
+    public bool IsPaused => !_settings.AutoEnabled || RuntimeSnapshot.PausedUntil is not null;
+    public string PrimaryPauseText => IsPaused ? "Resume" : "Pause 30 min";
+    public bool ShortcutAvailable { get; private set; } = true;
+    public string ShortcutStatusText => ShortcutAvailable
+        ? "Quick Adjust shortcut: Win+Alt+A"
+        : "Win+Alt+A is already used by another app. Open Adjust from the tray or change that app's shortcut.";
+    public string ActiveApplicationText => ApplicationDisplayNamePolicy.GetDisplayName(RuntimeSnapshot.AppContext.ProcessName);
+
+    public void SetQuickAdjustShortcutAvailability(bool available)
+    {
+        if (ShortcutAvailable == available)
+        {
+            return;
+        }
+
+        ShortcutAvailable = available;
+        OnPropertyChanged(nameof(ShortcutAvailable));
+        OnPropertyChanged(nameof(ShortcutStatusText));
+    }
 
     public string CurrentModeText => CurrentMode switch
     {
@@ -268,6 +294,9 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         RuntimeSnapshot = snapshot;
         OnPropertyChanged(nameof(CanUndoFeedback));
+        OnPropertyChanged(nameof(IsPaused));
+        OnPropertyChanged(nameof(PrimaryPauseText));
+        OnPropertyChanged(nameof(ActiveApplicationText));
         _settings = _session.Settings;
         NotifySettingsChanged();
         ProjectDisplays(snapshot.Displays);
@@ -457,6 +486,8 @@ public sealed class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ComfortIntensity));
         OnPropertyChanged(nameof(ComfortIntensityText));
         OnPropertyChanged(nameof(ComfortStateText));
+        OnPropertyChanged(nameof(IsPaused));
+        OnPropertyChanged(nameof(PrimaryPauseText));
     }
 
     private void NotifyDecisionChanged()

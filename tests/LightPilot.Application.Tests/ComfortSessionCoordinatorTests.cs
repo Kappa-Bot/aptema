@@ -163,7 +163,13 @@ public sealed class ComfortSessionCoordinatorTests
         {
             Applied.Add((monitor, decision));
             _changed.TrySetResult();
-            return ValueTask.FromResult(BrightnessApplyResult.NoChange(monitor.Id));
+            return ValueTask.FromResult(new BrightnessApplyResult(
+                monitor.Id,
+                BrightnessControlLayer.Overlay,
+                BrightnessControlLayer.Overlay,
+                MonitorControlState.Ready,
+                "Applied",
+                UsedOverlay: true));
         }
 
         public async Task WaitForCountAsync(int count)

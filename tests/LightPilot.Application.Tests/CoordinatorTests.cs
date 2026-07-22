@@ -59,6 +59,34 @@ public sealed class CoordinatorTests
     }
 
     [Fact]
+    public async Task UndoDoesNotRestoreSettingsWhenVisibleOutputIsThrottled()
+    {
+        var store = new StubSettingsStore();
+        var output = new FixedResultBrightnessController(new BrightnessApplyResult(
+            Monitor.Id, BrightnessControlLayer.None, BrightnessControlLayer.None, MonitorControlState.Throttled, "WriteThrottled"));
+        var coordinator = new FeedbackCoordinator(store, output, new FixedClock());
+
+        var result = await coordinator.UndoAsync(new FeedbackUndoRequest(UserSettings.Default, [Monitor], Decision()), CancellationToken.None);
+
+        Assert.Equal(OperationStatus.Unavailable, result.Status);
+        Assert.Null(store.Saved);
+    }
+
+    [Fact]
+    public async Task UndoRetriesThroughSafeFallbackBeforeRestoringSettings()
+    {
+        var store = new StubSettingsStore();
+        var output = new UndoFallbackBrightnessController();
+        var coordinator = new FeedbackCoordinator(store, output, new FixedClock());
+
+        var result = await coordinator.UndoAsync(new FeedbackUndoRequest(UserSettings.Default, [Monitor], Decision()), CancellationToken.None);
+
+        Assert.True(result.IsUsable);
+        Assert.Equal(1, output.FallbackCalls);
+        Assert.NotNull(store.Saved);
+    }
+
+    [Fact]
     public async Task ComfortAutomationProducesSnapshotAndPublishesLatestContext()
     {
         var updates = new LatestValueChannel<ComfortContextUpdate>();
@@ -79,6 +107,72 @@ public sealed class CoordinatorTests
         Assert.Equal("chrome.exe", result.Value.AppContext.ProcessName);
         Assert.Equal("chrome.exe", (await updates.ReadAsync(CancellationToken.None)).AppContext.ProcessName);
         Assert.Single(output.Applied);
+    }
+
+    [Fact]
+    public async Task ComfortAutomationUsesAptemaIdentityWhenAutoIsOff()
+    {
+        var coordinator = new ComfortAutomationCoordinator(
+            new StubForegroundDetector(new AppContextModel("chrome.exe", AppCategory.Browser, false)),
+            new StubLuminanceSampler(ContentLuminanceSample.Unknown),
+            new RecordingBrightnessController(),
+            new StubPowerStatusProvider(false),
+            new FixedClock(),
+            new LatestValueChannel<ComfortContextUpdate>());
+
+        var result = await coordinator.RefreshAsync(
+            new ComfortRefreshRequest(UserSettings.Default with { AutoEnabled = false }, [Monitor], null, null, TimeSpan.Zero),
+            CancellationToken.None);
+
+        Assert.Equal("Aptema.exe", result.Value!.AppContext.ProcessName);
+    }
+
+    [Fact]
+    public async Task ComfortAutomationCarriesDisplayFailureAcrossThrottledCycle()
+    {
+        var previousResult = new BrightnessApplyResult(Monitor.Id, BrightnessControlLayer.DdcCi, BrightnessControlLayer.None, MonitorControlState.Failed, "DdcFailed");
+        var previous = new ComfortRuntimeSnapshot(
+            new FixedClock().UtcNow,
+            new AppContextModel("chrome.exe", AppCategory.Browser, false),
+            ContentLuminanceSample.Unknown,
+            [new DisplayRuntimeState(Monitor, Decision(), previousResult)],
+            Decision(), null, LearningSummary.Empty,
+            new SystemHealthState(true, [$"Display:{Monitor.Id}:DdcFailed"]));
+        var throttled = new BrightnessApplyResult(Monitor.Id, BrightnessControlLayer.None, BrightnessControlLayer.None, MonitorControlState.Throttled, "WriteThrottled");
+        var coordinator = new ComfortAutomationCoordinator(
+            new StubForegroundDetector(new AppContextModel("chrome.exe", AppCategory.Browser, false)),
+            new StubLuminanceSampler(ContentLuminanceSample.Unknown),
+            new FixedResultBrightnessController(throttled),
+            new StubPowerStatusProvider(false), new FixedClock(), new LatestValueChannel<ComfortContextUpdate>());
+
+        var result = await coordinator.RefreshAsync(new ComfortRefreshRequest(UserSettings.Default, [Monitor], previous, null, TimeSpan.FromMinutes(20)), CancellationToken.None);
+
+        Assert.True(result.Value!.Health.IsDegraded);
+        Assert.Contains($"Display:{Monitor.Id}:DdcFailed", result.Value.Health.Issues);
+    }
+
+    [Fact]
+    public async Task ComfortAutomationMarksFallbackAsDegradedBeforeThrottleCycle()
+    {
+        var fallback = new BrightnessApplyResult(
+            Monitor.Id,
+            BrightnessControlLayer.DdcCi,
+            BrightnessControlLayer.WindowsBrightness,
+            MonitorControlState.FallbackUsed,
+            "HardwareFallbackApplied",
+            UsedHardware: true);
+        var coordinator = new ComfortAutomationCoordinator(
+            new StubForegroundDetector(new AppContextModel("chrome.exe", AppCategory.Browser, false)),
+            new StubLuminanceSampler(ContentLuminanceSample.Unknown),
+            new FixedResultBrightnessController(fallback),
+            new StubPowerStatusProvider(false), new FixedClock(), new LatestValueChannel<ComfortContextUpdate>());
+
+        var result = await coordinator.RefreshAsync(
+            new ComfortRefreshRequest(UserSettings.Default, [Monitor], null, null, TimeSpan.FromMinutes(20)),
+            CancellationToken.None);
+
+        Assert.True(result.Value!.Health.IsDegraded);
+        Assert.Contains($"Display:{Monitor.Id}:HardwareFallbackApplied", result.Value.Health.Issues);
     }
 
     [Fact]
@@ -128,6 +222,27 @@ public sealed class CoordinatorTests
             return ValueTask.FromResult(new BrightnessApplyResult(monitor.Id, BrightnessControlLayer.Overlay, BrightnessControlLayer.Overlay, MonitorControlState.Ready, "Applied"));
         }
     }
+
+    private sealed class FixedResultBrightnessController(BrightnessApplyResult result) : IBrightnessController
+    {
+        public ValueTask<BrightnessApplyResult> ApplyAsync(MonitorModel monitor, ComfortDecision decision, UserSettings settings, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(result);
+    }
+
+    private sealed class UndoFallbackBrightnessController : IBrightnessController, IUndoBrightnessController
+    {
+        public int FallbackCalls { get; private set; }
+        public ValueTask<BrightnessApplyResult> ApplyAsync(MonitorModel monitor, ComfortDecision decision, UserSettings settings, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(new BrightnessApplyResult(monitor.Id, BrightnessControlLayer.None, BrightnessControlLayer.None, MonitorControlState.Throttled, "WriteThrottled"));
+        public ValueTask<BrightnessApplyResult> ApplyUndoAsync(MonitorModel monitor, ComfortDecision decision, UserSettings settings, DateTimeOffset? retryAfter, CancellationToken cancellationToken)
+        {
+            FallbackCalls++;
+            return ValueTask.FromResult(new BrightnessApplyResult(monitor.Id, BrightnessControlLayer.Overlay, BrightnessControlLayer.Overlay, MonitorControlState.FallbackUsed, "UndoFallbackApplied", UsedOverlay: true));
+        }
+    }
+
+    private static ComfortDecision Decision() => new(
+        ComfortProfileId.Evening, 55, 4800, 0.08, TimeSpan.FromSeconds(45), true, "test", []);
 
     private sealed class StubForegroundDetector(AppContextModel context) : IForegroundWindowDetector
     {
