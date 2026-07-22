@@ -86,6 +86,11 @@ public enum MonitorControlState
     Failed
 }
 
+public readonly record struct DisplayBounds(int X, int Y, int Width, int Height)
+{
+    public bool IsValid => Width > 0 && Height > 0;
+}
+
 public sealed record BrightnessApplyResult(
     string MonitorId,
     BrightnessControlLayer PreferredLayer,
@@ -110,7 +115,36 @@ public sealed record MonitorModel(
     int MinimumBrightnessPercent,
     int MaximumBrightnessPercent,
     int BrightnessOffsetPercent,
-    long NativeHandle = 0);
+    long NativeHandle = 0,
+    DisplayBounds Bounds = default,
+    DisplayBounds WorkArea = default,
+    bool IsPrimary = false,
+    IReadOnlyList<string>? LegacyAliases = null,
+    string? HumanDisplayName = null)
+{
+    public IReadOnlyList<string> Aliases => LegacyAliases ?? Array.Empty<string>();
+    public string DisplayName => string.IsNullOrWhiteSpace(HumanDisplayName) ? Name : HumanDisplayName;
+}
+
+public sealed record DisplayConfiguration(
+    string StableId,
+    IReadOnlyList<string> LegacyAliases,
+    bool IsEnabled,
+    int BrightnessOffsetPercent,
+    int MinimumBrightnessPercent,
+    int MaximumBrightnessPercent,
+    bool AllowSoftwareFallback);
+
+public sealed record HotkeyConfiguration(
+    string? QuickAdjust,
+    string? TooBright,
+    string? TooDim,
+    string? Warmer,
+    string? Cooler,
+    string? PauseResume)
+{
+    public static HotkeyConfiguration Default { get; } = new("Win+Alt+A", null, null, null, null, null);
+}
 
 public sealed record MonitorPreference
 {
@@ -255,7 +289,7 @@ public sealed record UserSettings
 {
     public static UserSettings Default { get; } = new();
 
-    public int SchemaVersion { get; init; } = 3;
+    public int SchemaVersion { get; init; } = 5;
     public bool AutoEnabled { get; init; } = true;
     public int ComfortIntensity { get; init; } = 45;
     public TimeOnly WakeTime { get; init; } = new(7, 0);
@@ -272,4 +306,6 @@ public sealed record UserSettings
     public PreferenceLearningModel PreferenceLearning { get; init; } = PreferenceLearningModel.Empty;
     public IReadOnlyDictionary<string, AppCategory> AppOverrides { get; init; } = new Dictionary<string, AppCategory>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyList<MonitorPreference> MonitorPreferences { get; init; } = Array.Empty<MonitorPreference>();
+    public IReadOnlyList<DisplayConfiguration> DisplayConfigurations { get; init; } = Array.Empty<DisplayConfiguration>();
+    public HotkeyConfiguration Hotkeys { get; init; } = HotkeyConfiguration.Default;
 }

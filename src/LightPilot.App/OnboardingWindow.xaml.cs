@@ -1,16 +1,24 @@
 using System.Windows;
+using LightPilot.App.ViewModels;
 
 namespace LightPilot.App;
 
 public partial class OnboardingWindow : Window
 {
-    public OnboardingWindow()
+    public OnboardingWindow(OnboardingViewModel viewModel)
     {
         InitializeComponent();
+        DataContext = viewModel;
     }
 
-    private void Start_Click(object sender, RoutedEventArgs e)
+    private void Next_Click(object sender, RoutedEventArgs e)
     {
-        DialogResult = true;
+        if (DataContext is not OnboardingViewModel model) return;
+        if (model.IsLastStep)
+        {
+            DialogResult = true;
+            return;
+        }
+        model.MoveNext();
     }
 }

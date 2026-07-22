@@ -23,6 +23,7 @@ public sealed class MainWindowViewModel : ObservableObject
     private bool _startWithWindows;
     private ShellSurface _selectedSurface = ShellSurface.Home;
     private SettingsViewModel? _settingsDraft;
+    private DisplaySettingsViewModel? _displaySettingsDraft;
 
     public MainWindowViewModel(IComfortSession session, UserSettings? initialSettings = null)
     {
@@ -67,6 +68,16 @@ public sealed class MainWindowViewModel : ObservableObject
         OpenSettingsCommand = new RelayCommand(ShowSettingsSurface);
         SaveSettingsCommand = new RelayCommand(SaveSettingsSurface);
         CancelSettingsCommand = new RelayCommand(CancelSettingsSurface);
+        SaveDisplaySettingsCommand = new RelayCommand(SaveDisplaySettings);
+        CancelDisplaySettingsCommand = new RelayCommand(CancelDisplaySettings);
+        IdentifyDisplayCommand = new RelayCommand(parameter =>
+        {
+            if (parameter is DisplayConfigurationViewModel display) RequestIdentifyDisplay?.Invoke(this, display.Monitor);
+        });
+        TestDisplayCommand = new RelayCommand(parameter =>
+        {
+            if (parameter is DisplayConfigurationViewModel display) RequestTestDisplay?.Invoke(this, display.Monitor);
+        });
         ExitCommand = new RelayCommand(() => RequestExit?.Invoke(this, EventArgs.Empty));
 
         ProjectSnapshot(_runtimeSnapshot);
@@ -77,6 +88,8 @@ public sealed class MainWindowViewModel : ObservableObject
     public event EventHandler<bool>? RequestStartupRegistrationChanged;
     public event EventHandler? RequestQuickAdjust;
     public event EventHandler<FeedbackPresentationEventArgs>? FeedbackApplied;
+    public event EventHandler<MonitorModel>? RequestIdentifyDisplay;
+    public event EventHandler<MonitorModel>? RequestTestDisplay;
 
     public ObservableCollection<MonitorStatusViewModel> Monitors { get; }
 
@@ -104,6 +117,10 @@ public sealed class MainWindowViewModel : ObservableObject
     public RelayCommand OpenSettingsCommand { get; }
     public RelayCommand SaveSettingsCommand { get; }
     public RelayCommand CancelSettingsCommand { get; }
+    public RelayCommand SaveDisplaySettingsCommand { get; }
+    public RelayCommand CancelDisplaySettingsCommand { get; }
+    public RelayCommand IdentifyDisplayCommand { get; }
+    public RelayCommand TestDisplayCommand { get; }
     public RelayCommand ExitCommand { get; }
 
     public UserSettings Settings => _settings;
@@ -221,6 +238,12 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         get => _settingsDraft;
         private set => SetProperty(ref _settingsDraft, value);
+    }
+
+    public DisplaySettingsViewModel? DisplaySettingsDraft
+    {
+        get => _displaySettingsDraft;
+        private set => SetProperty(ref _displaySettingsDraft, value);
     }
 
     public string BrightnessText => ComfortCopy.DescribeLightLevel(BrightnessPercent);
@@ -448,6 +471,10 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             SettingsDraft = new SettingsViewModel(_settings, StartWithWindows);
         }
+        else if (surface == ShellSurface.Displays && DisplaySettingsDraft is null)
+        {
+            DisplaySettingsDraft = new DisplaySettingsViewModel(_settings, RuntimeSnapshot.Displays);
+        }
 
         SelectedSurface = surface;
     }
@@ -476,6 +503,22 @@ public sealed class MainWindowViewModel : ObservableObject
     private void CancelSettingsSurface()
     {
         SettingsDraft = null;
+        SelectedSurface = ShellSurface.Home;
+    }
+
+    private void SaveDisplaySettings()
+    {
+        if (DisplaySettingsDraft is not null)
+        {
+            ApplySettingsToSession(DisplaySettingsDraft.ToSettings(_settings));
+        }
+        DisplaySettingsDraft = null;
+        SelectedSurface = ShellSurface.Home;
+    }
+
+    private void CancelDisplaySettings()
+    {
+        DisplaySettingsDraft = null;
         SelectedSurface = ShellSurface.Home;
     }
 

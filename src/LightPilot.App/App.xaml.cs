@@ -16,6 +16,9 @@ public partial class App : System.Windows.Application
     private IComfortSession? _comfortSession;
     private TrayIconService? _trayIcon;
     private WpfOverlayController? _overlayController;
+    private DisplayTestCoordinator? _displayTestCoordinator;
+    private readonly DisplayIdentificationService _displayIdentification = new();
+    private IReadOnlyList<LightPilot.Core.MonitorModel> _detectedMonitors = Array.Empty<LightPilot.Core.MonitorModel>();
 
     public bool IsExplicitShutdown { get; private set; }
 
@@ -45,14 +48,17 @@ public partial class App : System.Windows.Application
                 _overlayController);
         var clock = new TimeProviderClock();
         var monitorEnumerator = new MonitorEnumerator();
+        _detectedMonitors = monitorEnumerator.EnumerateAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
         var foregroundWindowDetector = new ForegroundWindowDetector();
         var contentLuminanceSampler = new ContentLuminanceSampler();
         var powerStatusProvider = new SystemPowerStatusProvider();
         var contextUpdates = new LatestValueChannel<ComfortContextUpdate>();
 
+        var scheduler = new TimeProviderAdaptiveScheduler();
+        _displayTestCoordinator = new DisplayTestCoordinator(brightnessController, scheduler);
         _comfortSession = new ComfortSessionCoordinator(
             new ConfigurationCoordinator(settingsStore),
-            new DisplayLifecycleCoordinator(monitorEnumerator),
+            new DisplayLifecycleCoordinator(monitorEnumerator, _overlayController),
             new ComfortAutomationCoordinator(
                 foregroundWindowDetector,
                 contentLuminanceSampler,
@@ -63,7 +69,7 @@ public partial class App : System.Windows.Application
             new FeedbackCoordinator(settingsStore, brightnessController, clock),
             brightnessController,
             clock,
-            new TimeProviderAdaptiveScheduler());
+            scheduler);
         _viewModel = new MainWindowViewModel(_comfortSession, initialSettings)
         {
             StartWithWindows = _startupRegistration.IsEnabled()
@@ -73,6 +79,8 @@ public partial class App : System.Windows.Application
 
         _viewModel.RequestStartupRegistrationChanged += (_, enabled) => SetStartupEnabled(enabled);
         _viewModel.RequestExit += (_, _) => ExitApplication();
+        _viewModel.RequestIdentifyDisplay += (_, monitor) => IdentifyDisplay(monitor);
+        _viewModel.RequestTestDisplay += async (_, monitor) => await TestDisplayAsync(monitor);
 
         MainWindow = _mainWindow;
         _singleInstanceGuard?.StartActivationListener(() => Dispatcher.Invoke(ShowMainWindow));
@@ -160,11 +168,30 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        var onboarding = new OnboardingWindow();
+        var model = new OnboardingViewModel(initialSettings, _detectedMonitors, _viewModel.StartWithWindows);
+        model.IdentifyDisplayRequested += (_, monitor) => IdentifyDisplay(monitor);
+        model.DisplayTestRequested += async (_, monitor) => await TestDisplayAsync(monitor);
+        var onboarding = new OnboardingWindow(model);
         if (onboarding.ShowDialog() == true)
         {
-            _viewModel.ApplySettings(initialSettings with { HasCompletedOnboarding = true }, _viewModel.StartWithWindows);
+            _viewModel.ApplySettings(model.Complete(initialSettings), model.StartWithWindows);
+            SetStartupEnabled(model.StartWithWindows);
         }
+    }
+
+    private void IdentifyDisplay(LightPilot.Core.MonitorModel monitor)
+    {
+        var number = Math.Max(1, _detectedMonitors.ToList().FindIndex(item => item.Id == monitor.Id) + 1);
+        _displayIdentification.Show(monitor, number);
+    }
+
+    private async Task TestDisplayAsync(LightPilot.Core.MonitorModel monitor)
+    {
+        if (_displayTestCoordinator is null || _viewModel is null) return;
+        var baseline = _viewModel.RuntimeSnapshot.Displays.FirstOrDefault(item => item.Monitor.Id == monitor.Id)?.Decision
+            ?? _viewModel.RuntimeSnapshot.PrimaryDecision
+            ?? new LightPilot.Core.ComfortDecision(LightPilot.Core.ComfortProfileId.Auto, 60, 5200, 0, TimeSpan.FromSeconds(2), true, "Display check", []);
+        await _displayTestCoordinator.TestAsync(monitor, baseline, _viewModel.Settings, CancellationToken.None);
     }
 
     private void ExitApplication()

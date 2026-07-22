@@ -17,6 +17,7 @@ public sealed class ComfortSessionCoordinator(
     private Task? _loopTask;
     private DateTimeOffset _sessionStartedAt = clock.LocalNow;
     private DateTimeOffset? _pauseUntil;
+    private DateTimeOffset _lastDisplayRefreshAt = DateTimeOffset.MinValue;
     private FeedbackUndoCheckpoint? _feedbackUndo;
 
     public event Action<ComfortRuntimeSnapshot>? SnapshotChanged;
@@ -317,7 +318,7 @@ public sealed class ComfortSessionCoordinator(
             _pauseUntil = null;
         }
 
-        if (_displays.Count == 0)
+        if (_displays.Count == 0 || clock.UtcNow - _lastDisplayRefreshAt >= TimeSpan.FromSeconds(30))
         {
             await ReloadDisplaysCoreAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -341,6 +342,13 @@ public sealed class ComfortSessionCoordinator(
     {
         var result = await displayLifecycleCoordinator.LoadAsync(Settings, cancellationToken).ConfigureAwait(false);
         _displays = result.Value ?? Array.Empty<MonitorModel>();
+        var reconciled = StableDisplaySettingsReconciler.Reconcile(Settings, _displays);
+        if (!ReferenceEquals(reconciled, Settings))
+        {
+            Settings = reconciled;
+            await configurationCoordinator.SaveAsync(Settings, cancellationToken).ConfigureAwait(false);
+        }
+        _lastDisplayRefreshAt = clock.UtcNow;
     }
 
     private TimeSpan SessionLength() => clock.LocalNow - _sessionStartedAt;

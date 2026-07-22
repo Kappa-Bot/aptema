@@ -29,6 +29,11 @@ public interface IMonitorEnumerator
     ValueTask<IReadOnlyList<MonitorModel>> EnumerateAsync(CancellationToken cancellationToken);
 }
 
+public interface IDisplayTopologyObserver
+{
+    ValueTask UpdateTopologyAsync(IReadOnlyList<MonitorModel> displays, CancellationToken cancellationToken);
+}
+
 public interface IBrightnessController
 {
     ValueTask<BrightnessApplyResult> ApplyAsync(MonitorModel monitor, ComfortDecision decision, UserSettings settings, CancellationToken cancellationToken);

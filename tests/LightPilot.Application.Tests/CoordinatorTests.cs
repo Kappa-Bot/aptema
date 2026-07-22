@@ -5,6 +5,77 @@ namespace LightPilot.Application.Tests;
 
 public sealed class CoordinatorTests
 {
+    [Fact]
+    public async Task ExplicitDisplayTestAppliesMildChangeThenRestoresBaseline()
+    {
+        var output = new RecordingBrightnessController();
+        var scheduler = new RecordingScheduler();
+        var coordinator = new DisplayTestCoordinator(output, scheduler);
+        var baseline = Decision(55);
+
+        var result = await coordinator.TestAsync(Monitor, baseline, UserSettings.Default, CancellationToken.None);
+
+        Assert.True(result.IsUsable);
+        Assert.Equal(2, output.Applied.Count);
+        Assert.InRange(output.Applied[0].Decision.TargetBrightnessPercent, 49, 52);
+        Assert.Equal(55, output.Applied[1].Decision.TargetBrightnessPercent);
+        Assert.Equal(TimeSpan.FromSeconds(2), scheduler.LastDelay);
+    }
+
+    [Fact]
+    public async Task ExplicitDisplayTestRestoresEvenWhenBaselineWasSuppressed()
+    {
+        var output = new RecordingBrightnessController();
+        var coordinator = new DisplayTestCoordinator(output, new RecordingScheduler());
+        var baseline = Decision(58) with { ShouldApply = false };
+
+        await coordinator.TestAsync(Monitor, baseline, UserSettings.Default, CancellationToken.None);
+
+        Assert.Equal(2, output.Applied.Count);
+        Assert.All(output.Applied, item => Assert.True(item.Decision.ShouldApply));
+        Assert.Equal(58, output.Applied[1].Decision.TargetBrightnessPercent);
+    }
+
+    private sealed class RecordingScheduler : IAdaptiveScheduler
+    {
+        public TimeSpan LastDelay { get; private set; }
+        public ValueTask DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            LastDelay = delay;
+            return ValueTask.CompletedTask;
+        }
+    }
+    [Fact]
+    public async Task DisplayLifecycleMatchesConfigurationByLegacyAliasAfterStableReconnect()
+    {
+        var monitor = new MonitorModel("display:stable", "Dell", true, true, 15, 100, 0, 11,
+            new DisplayBounds(0, 0, 1920, 1080), new DisplayBounds(0, 0, 1920, 1040), true,
+            ["device:\\\\.\\DISPLAY1"], "Dell U2723QE");
+        var settings = UserSettings.Default with
+        {
+            DisplayConfigurations = [new DisplayConfiguration("old-stable-id", ["device:\\\\.\\DISPLAY1"], true, -5, 28, 86, true)]
+        };
+        var observer = new RecordingTopologyObserver();
+        var coordinator = new DisplayLifecycleCoordinator(new StubMonitorEnumerator([monitor]), observer);
+
+        var result = await coordinator.LoadAsync(settings, CancellationToken.None);
+
+        var actual = Assert.Single(result.Value!);
+        Assert.Equal(-5, actual.BrightnessOffsetPercent);
+        Assert.Equal(28, actual.MinimumBrightnessPercent);
+        Assert.Equal(86, actual.MaximumBrightnessPercent);
+        Assert.Single(observer.LastDisplays!);
+    }
+
+    private sealed class RecordingTopologyObserver : IDisplayTopologyObserver
+    {
+        public IReadOnlyList<MonitorModel>? LastDisplays { get; private set; }
+        public ValueTask UpdateTopologyAsync(IReadOnlyList<MonitorModel> displays, CancellationToken cancellationToken)
+        {
+            LastDisplays = displays;
+            return ValueTask.CompletedTask;
+        }
+    }
     private static readonly MonitorModel Monitor = new("display-1", "Display 1", false, true, 15, 100, 0);
     private static readonly MonitorModel SecondMonitor = new("display-2", "Display 2", false, true, 15, 100, 0);
 

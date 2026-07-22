@@ -1,5 +1,6 @@
 using System.Windows.Interop;
 using LightPilot.Application;
+using LightPilot.Core;
 
 namespace LightPilot.App.Services;
 
@@ -9,7 +10,7 @@ public sealed class HotkeyHost : IDisposable
     private readonly HwndSource _source;
     private readonly GlobalHotkeyService _service;
 
-    public HotkeyHost()
+    public HotkeyHost(HotkeyConfiguration? configuration = null)
     {
         _source = new HwndSource(new HwndSourceParameters("Aptema.Hotkeys")
         {
@@ -19,7 +20,7 @@ public sealed class HotkeyHost : IDisposable
         });
         _source.AddHook(WndProc);
         _service = new GlobalHotkeyService(new Win32HotkeyRegistrar(_source.Handle));
-        Registration = _service.RegisterDefaults();
+        Registration = _service.RegisterConfigured(configuration ?? HotkeyConfiguration.Default);
     }
 
     public event Action<HotkeyAction>? Invoked;

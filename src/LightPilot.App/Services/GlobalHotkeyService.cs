@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using LightPilot.Application;
+using LightPilot.Core;
 
 namespace LightPilot.App.Services;
 
@@ -30,16 +31,44 @@ public sealed class GlobalHotkeyService(IHotkeyRegistrar registrar) : IDisposabl
     public const int QuickAdjustId = 0xA701;
     private bool _registered;
 
-    public OperationResult<HotkeyAction> RegisterDefaults()
+    public OperationResult<HotkeyAction> RegisterDefaults() => RegisterConfigured(HotkeyConfiguration.Default);
+
+    public OperationResult<HotkeyAction> RegisterConfigured(HotkeyConfiguration configuration)
     {
+        if (string.IsNullOrWhiteSpace(configuration.QuickAdjust))
+        {
+            return OperationResult<HotkeyAction>.Failure(OperationStatus.Unavailable, "QuickAdjustHotkeyDisabled");
+        }
+
+        if (!TryParse(configuration.QuickAdjust, out var modifiers, out var virtualKey))
+        {
+            return OperationResult<HotkeyAction>.Failure(OperationStatus.ValidationFailure, "QuickAdjustHotkeyInvalid");
+        }
+
         _registered = registrar.Register(
             QuickAdjustId,
             HotkeyAction.QuickAdjust,
-            HotkeyModifiers.Windows | HotkeyModifiers.Alt | HotkeyModifiers.NoRepeat,
-            'A');
+            modifiers | HotkeyModifiers.NoRepeat,
+            virtualKey);
         return _registered
             ? OperationResult<HotkeyAction>.Succeeded(HotkeyAction.QuickAdjust)
             : OperationResult<HotkeyAction>.Failure(OperationStatus.Conflict, "QuickAdjustHotkeyUnavailable");
+    }
+
+    private static bool TryParse(string gesture, out HotkeyModifiers modifiers, out int virtualKey)
+    {
+        modifiers = HotkeyModifiers.None;
+        virtualKey = 0;
+        foreach (var part in gesture.Split('+', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (part.Equals("Win", StringComparison.OrdinalIgnoreCase) || part.Equals("Windows", StringComparison.OrdinalIgnoreCase)) modifiers |= HotkeyModifiers.Windows;
+            else if (part.Equals("Alt", StringComparison.OrdinalIgnoreCase)) modifiers |= HotkeyModifiers.Alt;
+            else if (part.Equals("Ctrl", StringComparison.OrdinalIgnoreCase) || part.Equals("Control", StringComparison.OrdinalIgnoreCase)) modifiers |= HotkeyModifiers.Control;
+            else if (part.Equals("Shift", StringComparison.OrdinalIgnoreCase)) modifiers |= HotkeyModifiers.Shift;
+            else if (part.Length == 1 && char.IsAsciiLetterOrDigit(part[0]) && virtualKey == 0) virtualKey = char.ToUpperInvariant(part[0]);
+            else return false;
+        }
+        return modifiers != HotkeyModifiers.None && virtualKey != 0;
     }
 
     public HotkeyAction? Resolve(int id) => id == QuickAdjustId ? HotkeyAction.QuickAdjust : null;

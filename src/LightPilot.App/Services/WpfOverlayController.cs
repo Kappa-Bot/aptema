@@ -5,10 +5,12 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using LightPilot.Core;
 using LightPilot.Infrastructure;
+using LightPilot.Application;
+using LightPilot.App.Presentation;
 
 namespace LightPilot.App.Services;
 
-public sealed class WpfOverlayController : IOverlayController, IDisposable
+public sealed class WpfOverlayController : IOverlayController, IDisplayTopologyObserver, IDisposable
 {
     private readonly Dictionary<string, Window> _windows = new(StringComparer.OrdinalIgnoreCase);
 
@@ -22,6 +24,7 @@ public sealed class WpfOverlayController : IOverlayController, IDisposable
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             var window = GetOrCreate(monitor.Id);
+            Position(window, monitor.Bounds);
             var targetOpacity = Math.Clamp(opacity, 0, 0.35);
             window.Background = new SolidColorBrush(ToWarmColor(colorTemperatureKelvin, targetOpacity));
 
@@ -29,6 +32,7 @@ public sealed class WpfOverlayController : IOverlayController, IDisposable
             {
                 window.Opacity = 0;
                 window.Show();
+                Position(window, monitor.Bounds);
             }
 
             var fade = new DoubleAnimation(targetOpacity, TimeSpan.FromSeconds(2))
@@ -52,6 +56,26 @@ public sealed class WpfOverlayController : IOverlayController, IDisposable
             window.BeginAnimation(Window.OpacityProperty, fade, HandoffBehavior.SnapshotAndReplace);
         });
 
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask UpdateTopologyAsync(IReadOnlyList<MonitorModel> displays, CancellationToken cancellationToken)
+    {
+        if (System.Windows.Application.Current is null) return ValueTask.CompletedTask;
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            var current = displays.Select(display => display.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var stale in _windows.Keys.Where(id => !current.Contains(id)).ToArray())
+            {
+                _windows[stale].Close();
+                _windows.Remove(stale);
+            }
+
+            foreach (var display in displays)
+            {
+                if (_windows.TryGetValue(display.Id, out var window)) Position(window, display.Bounds);
+            }
+        });
         return ValueTask.CompletedTask;
     }
 
@@ -79,10 +103,10 @@ public sealed class WpfOverlayController : IOverlayController, IDisposable
             ShowInTaskbar = false,
             Topmost = true,
             ResizeMode = ResizeMode.NoResize,
-            Left = SystemParameters.VirtualScreenLeft,
-            Top = SystemParameters.VirtualScreenTop,
-            Width = SystemParameters.VirtualScreenWidth,
-            Height = SystemParameters.VirtualScreenHeight,
+            Left = 0,
+            Top = 0,
+            Width = 1,
+            Height = 1,
             IsHitTestVisible = false,
             Focusable = false
         };
@@ -91,11 +115,19 @@ public sealed class WpfOverlayController : IOverlayController, IDisposable
         {
             var hwnd = new WindowInteropHelper(window).Handle;
             var style = GetWindowLong(hwnd, GwlExStyle);
-            SetWindowLong(hwnd, GwlExStyle, style | WsExTransparent | WsExLayered | WsExToolWindow);
+            SetWindowLong(hwnd, GwlExStyle, style | WsExTransparent | WsExLayered | WsExToolWindow | WsExNoActivate);
         };
 
         _windows[monitorId] = window;
         return window;
+    }
+
+    private static void Position(Window window, DisplayBounds bounds)
+    {
+        if (!OverlayBoundsPolicy.TryGetPhysicalBounds(bounds, out var rectangle)) return;
+        var hwnd = new WindowInteropHelper(window).EnsureHandle();
+        SetWindowPos(hwnd, HwndTopmost, rectangle.X, rectangle.Y, rectangle.Width, rectangle.Height,
+            SwpNoActivate | SwpNoOwnerZOrder);
     }
 
     private static System.Windows.Media.Color ToWarmColor(int colorTemperatureKelvin, double opacity)
@@ -113,10 +145,18 @@ public sealed class WpfOverlayController : IOverlayController, IDisposable
     private const int WsExTransparent = 0x00000020;
     private const int WsExLayered = 0x00080000;
     private const int WsExToolWindow = 0x00000080;
+    private const int WsExNoActivate = 0x08000000;
+    private static readonly nint HwndTopmost = new(-1);
+    private const uint SwpNoActivate = 0x0010;
+    private const uint SwpNoOwnerZOrder = 0x0200;
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern int GetWindowLong(nint hWnd, int nIndex);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern int SetWindowLong(nint hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
 }

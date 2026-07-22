@@ -113,6 +113,12 @@ public sealed class BrightnessController : IBrightnessController, IUndoBrightnes
             failedHardware = true;
         }
 
+        if (FindDisplayConfiguration(monitor, settings) is { AllowSoftwareFallback: false })
+        {
+            _lastWrites[monitor.Id] = now;
+            return Result(monitor, preferred, BrightnessControlLayer.None, MonitorControlState.Unsupported, "SoftwareFallbackDisabled", ddcState?.SuppressedUntil);
+        }
+
         if (!await TryApplyOverlayAsync(monitor, decision, cancellationToken).ConfigureAwait(false))
         {
             _lastWrites[monitor.Id] = now;
@@ -179,6 +185,11 @@ public sealed class BrightnessController : IBrightnessController, IUndoBrightnes
 
     private static bool IsMonitorDisabled(MonitorModel monitor, UserSettings settings)
     {
+        if (FindDisplayConfiguration(monitor, settings) is { } configuration)
+        {
+            return !configuration.IsEnabled;
+        }
+
         return settings.MonitorPreferences.Any(preference =>
             string.Equals(preference.MonitorId, monitor.Id, StringComparison.OrdinalIgnoreCase) &&
             preference.IsDisabled);
@@ -186,16 +197,24 @@ public sealed class BrightnessController : IBrightnessController, IUndoBrightnes
 
     private static int ClampBrightness(MonitorModel monitor, UserSettings settings, int brightness)
     {
+        var configuration = FindDisplayConfiguration(monitor, settings);
         var preference = settings.MonitorPreferences.FirstOrDefault(item =>
             string.Equals(item.MonitorId, monitor.Id, StringComparison.OrdinalIgnoreCase));
-        var minimum = Math.Max(15, Math.Max(monitor.MinimumBrightnessPercent, preference?.MinimumBrightnessPercent ?? settings.MinimumBrightnessPercent));
-        var maximum = Math.Min(monitor.MaximumBrightnessPercent, preference?.MaximumBrightnessPercent ?? settings.MaximumBrightnessPercent);
+        var minimum = Math.Max(15, Math.Max(monitor.MinimumBrightnessPercent, configuration?.MinimumBrightnessPercent ?? preference?.MinimumBrightnessPercent ?? settings.MinimumBrightnessPercent));
+        var maximum = Math.Min(monitor.MaximumBrightnessPercent, configuration?.MaximumBrightnessPercent ?? preference?.MaximumBrightnessPercent ?? settings.MaximumBrightnessPercent);
         if (minimum > maximum)
         {
             minimum = maximum;
         }
 
         return Math.Clamp(brightness, minimum, maximum);
+    }
+
+    private static DisplayConfiguration? FindDisplayConfiguration(MonitorModel monitor, UserSettings settings)
+    {
+        var identities = monitor.Aliases.Append(monitor.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return settings.DisplayConfigurations.FirstOrDefault(item =>
+            identities.Contains(item.StableId) || item.LegacyAliases.Any(identities.Contains));
     }
 
     private async ValueTask<bool> TryApplyOverlayAsync(MonitorModel monitor, ComfortDecision decision, CancellationToken cancellationToken)

@@ -82,10 +82,39 @@ public sealed class MainWindowViewModelApplicationLayerTests
         Assert.Equal("Visual Studio Code", ApplicationDisplayNamePolicy.GetDisplayName("code.exe"));
     }
 
+    [Fact]
+    public void DisplaySurfaceUsesStagedSaveAndCancel()
+    {
+        var monitor = new MonitorModel("display:one", "Dell", true, true, 15, 100, 0, 11,
+            new DisplayBounds(0, 0, 1920, 1080), new DisplayBounds(0, 0, 1920, 1040), true,
+            ["device:\\\\.\\DISPLAY1"], "Dell U2723QE");
+        var session = new StubComfortSession(displays: [monitor]);
+        var viewModel = new MainWindowViewModel(session, UserSettings.Default);
+
+        viewModel.SelectSurfaceCommand.Execute(ShellSurface.Displays);
+        viewModel.DisplaySettingsDraft!.Displays[0].IsEnabled = false;
+        viewModel.CancelDisplaySettingsCommand.Execute(null);
+        Assert.Equal(0, session.ApplySettingsCalls);
+
+        viewModel.SelectSurfaceCommand.Execute(ShellSurface.Displays);
+        viewModel.DisplaySettingsDraft!.Displays[0].IsEnabled = false;
+        viewModel.SaveDisplaySettingsCommand.Execute(null);
+        Assert.Equal(1, session.ApplySettingsCalls);
+        Assert.False(session.Settings.DisplayConfigurations[0].IsEnabled);
+    }
+
     private sealed class StubComfortSession : IComfortSession
     {
-        public StubComfortSession(bool paused = false)
+        public StubComfortSession(bool paused = false, IReadOnlyList<MonitorModel>? displays = null)
         {
+            if (displays is not null)
+            {
+                var decision = new ComfortDecision(ComfortProfileId.Auto, 60, 5200, 0, TimeSpan.Zero, false, "steady", []);
+                CurrentSnapshot = new ComfortRuntimeSnapshot(DateTimeOffset.UtcNow,
+                    new AppContextModel("Aptema.exe", AppCategory.System, false), ContentLuminanceSample.Unknown,
+                    displays.Select(monitor => new DisplayRuntimeState(monitor, decision, BrightnessApplyResult.NoChange(monitor.Id))),
+                    decision, null, LearningSummary.Empty, SystemHealthState.Healthy);
+            }
             if (paused)
             {
                 CurrentSnapshot = CurrentSnapshot with { PausedUntil = DateTimeOffset.UtcNow.AddMinutes(30) };
@@ -101,6 +130,7 @@ public sealed class MainWindowViewModelApplicationLayerTests
         public TimeSpan? LastPauseDuration { get; private set; }
         public ComfortFeedback? LastFeedback { get; private set; }
         public bool ResumeCalled { get; private set; }
+        public int ApplySettingsCalls { get; private set; }
 
         public ValueTask StartAsync(UserSettings? initialSettings, CancellationToken cancellationToken) => ValueTask.CompletedTask;
         public ValueTask StopAsync(CancellationToken cancellationToken) => ValueTask.CompletedTask;
@@ -129,6 +159,7 @@ public sealed class MainWindowViewModelApplicationLayerTests
             ValueTask.FromResult(OperationResult<ComfortRuntimeSnapshot>.Failure(OperationStatus.Unavailable, "NoUndo"));
         public ValueTask ApplySettingsAsync(UserSettings settings, CancellationToken cancellationToken)
         {
+            ApplySettingsCalls++;
             Settings = settings;
             return ValueTask.CompletedTask;
         }

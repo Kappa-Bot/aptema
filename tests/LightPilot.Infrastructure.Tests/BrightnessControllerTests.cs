@@ -7,6 +7,22 @@ namespace LightPilot.Infrastructure.Tests;
 public sealed class BrightnessControllerTests
 {
     [Fact]
+    public async Task StableDisplayConfigurationDisablesMonitorThroughLegacyAlias()
+    {
+        var monitor = Monitor with { Id = "display:stable", LegacyAliases = ["device:\\\\.\\DISPLAY1"] };
+        var settings = UserSettings.Default with
+        {
+            DisplayConfigurations = [new DisplayConfiguration("old-id", ["device:\\\\.\\DISPLAY1"], false, 0, 25, 90, true)]
+        };
+        var ddc = new FakeDdcCiApi(true);
+        var controller = new BrightnessController(ddc, new FakeWindowsBrightnessApi(false), new FakeOverlayController());
+
+        var result = await controller.ApplyAsync(monitor, Decision(50), settings, CancellationToken.None);
+
+        Assert.Equal(MonitorControlState.Disabled, result.State);
+        Assert.Equal(0, ddc.WriteCount);
+    }
+    [Fact]
     public async Task UsesDdcCiWhenSupportedAndEnabled()
     {
         var ddc = new FakeDdcCiApi(canSet: true);

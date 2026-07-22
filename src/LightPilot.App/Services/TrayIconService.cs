@@ -18,7 +18,7 @@ public sealed class TrayIconService : IDisposable
     private readonly TrayCommandRouter _router;
     private readonly TrayFlyoutWindow _flyout;
     private readonly OsdWindow _osd = new();
-    private readonly HotkeyHost _hotkeyHost = new();
+    private readonly HotkeyHost _hotkeyHost;
     private readonly TrayNotificationTracker _notificationTracker = new();
     private bool _disposed;
 
@@ -26,6 +26,7 @@ public sealed class TrayIconService : IDisposable
     {
         _viewModel = viewModel;
         _window = window;
+        _hotkeyHost = new HotkeyHost(viewModel.Settings.Hotkeys);
         _icons = LoadIcons();
         _notifyIcon = new Forms.NotifyIcon
         {

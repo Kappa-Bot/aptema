@@ -7,6 +7,66 @@ namespace LightPilot.Infrastructure.Tests;
 public sealed class JsonSettingsStoreTests
 {
     [Fact]
+    public async Task LoadAsyncMigratesV4EnvelopeToV5WithoutLosingLearningOrDisplayAliases()
+    {
+        using var temp = new TempDirectory();
+        var path = Path.Combine(temp.Path, "settings.json");
+        var context = new PreferenceLearningContext("device:\\\\.\\DISPLAY1", AppCategory.Browser, DayPhase.Night, false, LuminanceClassification.Bright);
+        var learning = PreferenceLearningService.RecordFeedback(PreferenceLearningModel.Empty, context, ComfortFeedback.TooBright, DateTimeOffset.Parse("2026-07-20T22:00:00Z"));
+        var legacySettings = UserSettings.Default with
+        {
+            SchemaVersion = 3,
+            ComfortIntensity = 61,
+            PreferenceLearning = learning,
+            MonitorPreferences = [new MonitorPreference { MonitorId = "device:\\\\.\\DISPLAY1", BrightnessOffsetPercent = -4 }]
+        };
+        var v4 = new
+        {
+            schemaVersion = 4,
+            savedAt = DateTimeOffset.Parse("2026-07-20T22:00:00Z"),
+            settings = legacySettings
+        };
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(v4));
+
+        var first = await new JsonSettingsStore(path).LoadAsync(CancellationToken.None);
+        var second = await new JsonSettingsStore(path).LoadAsync(CancellationToken.None);
+
+        Assert.Equal(5, first.SchemaVersion);
+        Assert.Equal(61, first.ComfortIntensity);
+        Assert.Single(first.PreferenceLearning.Aggregates);
+        var display = Assert.Single(first.DisplayConfigurations);
+        Assert.Equal(-4, display.BrightnessOffsetPercent);
+        Assert.Contains("device:\\\\.\\DISPLAY1", display.LegacyAliases, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(first.ComfortIntensity, second.ComfortIntensity);
+        Assert.Equal(first.PreferenceLearning.Aggregates.Count, second.PreferenceLearning.Aggregates.Count);
+        Assert.Equal(first.DisplayConfigurations[0].StableId, second.DisplayConfigurations[0].StableId);
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+        Assert.Equal(5, document.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(4, document.RootElement.GetProperty("migration").GetProperty("sourceSchemaVersion").GetInt32());
+    }
+
+    [Fact]
+    public async Task SaveAsyncRoundTripsSchema5DisplayAndHotkeyConfiguration()
+    {
+        using var temp = new TempDirectory();
+        var path = Path.Combine(temp.Path, "settings.json");
+        var settings = UserSettings.Default with
+        {
+            DisplayConfigurations = [new DisplayConfiguration("display:stable", ["device:\\\\.\\DISPLAY2"], false, 3, 30, 82, true)],
+            Hotkeys = new HotkeyConfiguration("Win+Alt+Q", null, null, null, null, null)
+        };
+        var store = new JsonSettingsStore(path);
+
+        await store.SaveAsync(settings, CancellationToken.None);
+        var actual = await store.LoadAsync(CancellationToken.None);
+
+        var display = Assert.Single(actual.DisplayConfigurations);
+        Assert.Equal("display:stable", display.StableId);
+        Assert.Equal(["device:\\\\.\\DISPLAY2"], display.LegacyAliases);
+        Assert.False(display.IsEnabled);
+        Assert.Equal(settings.Hotkeys, actual.Hotkeys);
+    }
+    [Fact]
     public async Task LoadAsyncReturnsDefaultsWhenSettingsFileIsMissing()
     {
         using var temp = new TempDirectory();
@@ -59,7 +119,7 @@ public sealed class JsonSettingsStoreTests
 
         var settings = await store.LoadAsync(CancellationToken.None);
 
-        Assert.Equal(3, settings.SchemaVersion);
+        Assert.Equal(5, settings.SchemaVersion);
         Assert.Equal(45, settings.ComfortIntensity);
         Assert.Equal(TimeSpan.FromSeconds(90), settings.TransitionSpeed);
     }
@@ -80,7 +140,7 @@ public sealed class JsonSettingsStoreTests
 
         var settings = await store.LoadAsync(CancellationToken.None);
 
-        Assert.Equal(3, settings.SchemaVersion);
+        Assert.Equal(5, settings.SchemaVersion);
         Assert.Equal(72, settings.ComfortIntensity);
         Assert.Equal(TimeSpan.FromSeconds(130), settings.TransitionSpeed);
     }
@@ -100,7 +160,7 @@ public sealed class JsonSettingsStoreTests
 
         var settings = await store.LoadAsync(CancellationToken.None);
 
-        Assert.Equal(3, settings.SchemaVersion);
+        Assert.Equal(5, settings.SchemaVersion);
         Assert.True(settings.EnablePreferenceLearning);
         Assert.Empty(settings.PreferenceLearning.Aggregates);
         Assert.Equal(47, settings.ComfortIntensity);
@@ -146,7 +206,7 @@ public sealed class JsonSettingsStoreTests
         var targetPath = Path.Combine(temp.Path, "Aptema", "config", "settings.json");
         var legacyPath = Path.Combine(temp.Path, "LightPilot", "settings.json");
         Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
-        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { ComfortIntensity = 37 }));
+        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { SchemaVersion = 3, ComfortIntensity = 37 }));
         var store = new JsonSettingsStore(targetPath, legacyPath);
 
         var settings = await store.LoadAsync(CancellationToken.None);
@@ -154,7 +214,7 @@ public sealed class JsonSettingsStoreTests
         Assert.Equal(37, settings.ComfortIntensity);
         Assert.True(File.Exists(legacyPath));
         using var document = JsonDocument.Parse(await File.ReadAllTextAsync(targetPath));
-        Assert.Equal(4, document.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(5, document.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.Equal(37, document.RootElement.GetProperty("settings").GetProperty("comfortIntensity").GetInt32());
         Assert.Equal("LightPilot", document.RootElement.GetProperty("migration").GetProperty("sourceProduct").GetString());
     }
@@ -166,10 +226,10 @@ public sealed class JsonSettingsStoreTests
         var targetPath = Path.Combine(temp.Path, "Aptema", "config", "settings.json");
         var legacyPath = Path.Combine(temp.Path, "LightPilot", "settings.json");
         Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
-        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { ComfortIntensity = 37 }));
+        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { SchemaVersion = 3, ComfortIntensity = 37 }));
         var store = new JsonSettingsStore(targetPath, legacyPath);
         await store.LoadAsync(CancellationToken.None);
-        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { ComfortIntensity = 88 }));
+        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { SchemaVersion = 3, ComfortIntensity = 88 }));
 
         var settings = await new JsonSettingsStore(targetPath, legacyPath).LoadAsync(CancellationToken.None);
 
@@ -193,7 +253,7 @@ public sealed class JsonSettingsStoreTests
         Assert.True(File.Exists(targetPath));
         Assert.Single(Directory.EnumerateFiles(Path.GetDirectoryName(targetPath)!, "settings.json.corrupt-*"));
         using var document = JsonDocument.Parse(await File.ReadAllTextAsync(targetPath));
-        Assert.Equal(4, document.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(5, document.RootElement.GetProperty("schemaVersion").GetInt32());
     }
 
     [Fact]
@@ -220,7 +280,7 @@ public sealed class JsonSettingsStoreTests
         using var temp = new TempDirectory();
         var path = Path.Combine(temp.Path, "settings.json");
         const string future = """
-            {"schemaVersion":5,"settings":{"schemaVersion":3,"comfortIntensity":77},"futureField":"keep"}
+            {"schemaVersion":6,"settings":{"schemaVersion":5,"comfortIntensity":77},"futureField":"keep"}
             """;
         await File.WriteAllTextAsync(path, future);
         var store = new JsonSettingsStore(path, legacySettingsPath: null);
@@ -239,7 +299,7 @@ public sealed class JsonSettingsStoreTests
         using var temp = new TempDirectory();
         var path = Path.Combine(temp.Path, "settings.json");
         const string future = """
-            {"schemaVersion":5,"settings":{"schemaVersion":3,"comfortIntensity":77},"futureField":"keep"}
+            {"schemaVersion":6,"settings":{"schemaVersion":5,"comfortIntensity":77},"futureField":"keep"}
             """;
         await File.WriteAllTextAsync(path, future);
         var store = new JsonSettingsStore(path, legacySettingsPath: null);
@@ -248,7 +308,7 @@ public sealed class JsonSettingsStoreTests
         var exception = await Assert.ThrowsAsync<UnsupportedSettingsEnvelopeException>(async () =>
             await store.SaveAsync(UserSettings.Default with { ComfortIntensity = 20 }, CancellationToken.None));
 
-        Assert.Equal(5, exception.SchemaVersion);
+        Assert.Equal(6, exception.SchemaVersion);
         Assert.IsAssignableFrom<IOException>(exception);
         Assert.Equal(future, await File.ReadAllTextAsync(path));
     }
@@ -279,7 +339,7 @@ public sealed class JsonSettingsStoreTests
         Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
         await File.WriteAllTextAsync(targetPath, "{broken");
         await File.WriteAllTextAsync($"{targetPath}.lkg.1", "{also-broken");
-        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { ComfortIntensity = 39 }));
+        await File.WriteAllTextAsync(legacyPath, JsonSerializer.Serialize(UserSettings.Default with { SchemaVersion = 3, ComfortIntensity = 39 }));
         var store = new JsonSettingsStore(targetPath, legacyPath);
 
         var settings = await store.LoadAsync(CancellationToken.None);

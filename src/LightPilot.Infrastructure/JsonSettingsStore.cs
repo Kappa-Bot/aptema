@@ -6,7 +6,7 @@ namespace LightPilot.Infrastructure;
 
 public sealed class JsonSettingsStore : ISettingsStore
 {
-    public const int CurrentEnvelopeSchemaVersion = 4;
+    public const int CurrentEnvelopeSchemaVersion = 5;
     private const int BackupCount = 3;
 
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.General)
@@ -55,13 +55,13 @@ public sealed class JsonSettingsStore : ISettingsStore
                     return UserSettings.Default;
                 }
 
-                if (current is { Settings: not null } && current.Kind is SettingsDocumentKind.Envelope or SettingsDocumentKind.FlatLegacy)
+                if (current is { Settings: not null } && current.Kind is SettingsDocumentKind.Envelope or SettingsDocumentKind.PreviousEnvelope or SettingsDocumentKind.FlatLegacy)
                 {
                     _unsupportedEnvelopeSchemaVersion = null;
                     var normalized = Normalize(current.Settings);
-                    if (current.Kind == SettingsDocumentKind.FlatLegacy)
+                    if (current.Kind is SettingsDocumentKind.FlatLegacy or SettingsDocumentKind.PreviousEnvelope)
                     {
-                        await SaveEnvelopeAsync(normalized, MigrationMetadata.Upgrade(current.Settings.SchemaVersion, _clock.UtcNow), cancellationToken).ConfigureAwait(false);
+                        await SaveEnvelopeAsync(normalized, MigrationMetadata.Upgrade(current.DocumentSchemaVersion ?? current.Settings.SchemaVersion, _clock.UtcNow), cancellationToken).ConfigureAwait(false);
                     }
 
                     return normalized;
@@ -128,7 +128,7 @@ public sealed class JsonSettingsStore : ISettingsStore
         }
 
         var legacy = await TryReadSettingsAsync(_legacySettingsPath, cancellationToken).ConfigureAwait(false);
-        if (legacy is not { Settings: not null } || legacy.Kind is not (SettingsDocumentKind.Envelope or SettingsDocumentKind.FlatLegacy))
+        if (legacy is not { Settings: not null } || legacy.Kind is not (SettingsDocumentKind.Envelope or SettingsDocumentKind.PreviousEnvelope or SettingsDocumentKind.FlatLegacy))
         {
             return null;
         }
@@ -144,7 +144,7 @@ public sealed class JsonSettingsStore : ISettingsStore
         for (var index = 1; index <= BackupCount; index++)
         {
             var backup = await TryReadSettingsAsync(BackupPath(index), cancellationToken).ConfigureAwait(false);
-            if (backup is { Settings: not null } && backup.Kind is SettingsDocumentKind.Envelope or SettingsDocumentKind.FlatLegacy)
+            if (backup is { Settings: not null } && backup.Kind is SettingsDocumentKind.Envelope or SettingsDocumentKind.PreviousEnvelope or SettingsDocumentKind.FlatLegacy)
             {
                 return Normalize(backup.Settings);
             }
@@ -189,6 +189,19 @@ public sealed class JsonSettingsStore : ISettingsStore
                 return settings is null
                     ? SettingsReadResult.Malformed
                     : new SettingsReadResult(SettingsDocumentKind.Envelope, settings, schemaVersion);
+            }
+
+            if (schemaVersion == 4)
+            {
+                if (!TryGetProperty(root, "settings", out var settingsElement) || settingsElement.ValueKind != JsonValueKind.Object)
+                {
+                    return SettingsReadResult.Malformed;
+                }
+
+                var settings = settingsElement.Deserialize<UserSettings>(Options);
+                return settings is null
+                    ? SettingsReadResult.Malformed
+                    : new SettingsReadResult(SettingsDocumentKind.PreviousEnvelope, settings, schemaVersion);
             }
 
             if (schemaVersion is >= 1 and <= 3 && !TryGetProperty(root, "settings", out _))
@@ -298,8 +311,39 @@ public sealed class JsonSettingsStore : ISettingsStore
             MaximumBrightnessPercent = maximum,
             TransitionSpeed = transitionSpeed,
             EnablePreferenceLearning = settings.SchemaVersion < 3 || settings.EnablePreferenceLearning,
-            PreferenceLearning = settings.PreferenceLearning ?? PreferenceLearningModel.Empty
+            PreferenceLearning = settings.PreferenceLearning ?? PreferenceLearningModel.Empty,
+            DisplayConfigurations = NormalizeDisplays(settings),
+            Hotkeys = settings.Hotkeys ?? HotkeyConfiguration.Default
         };
+    }
+
+    private static IReadOnlyList<DisplayConfiguration> NormalizeDisplays(UserSettings settings)
+    {
+        if (settings.DisplayConfigurations is { Count: > 0 })
+        {
+            return settings.DisplayConfigurations.Select(item => item with
+            {
+                LegacyAliases = item.LegacyAliases ?? Array.Empty<string>(),
+                BrightnessOffsetPercent = Math.Clamp(item.BrightnessOffsetPercent, -20, 20),
+                MinimumBrightnessPercent = Math.Clamp(item.MinimumBrightnessPercent, 15, 100),
+                MaximumBrightnessPercent = Math.Clamp(item.MaximumBrightnessPercent, Math.Clamp(item.MinimumBrightnessPercent, 15, 100), 100)
+            }).ToArray();
+        }
+
+        return settings.MonitorPreferences.Select(item => new DisplayConfiguration(
+            StableId: StableLegacyId(item.MonitorId),
+            LegacyAliases: [item.MonitorId],
+            IsEnabled: !item.IsDisabled,
+            BrightnessOffsetPercent: Math.Clamp(item.BrightnessOffsetPercent, -20, 20),
+            MinimumBrightnessPercent: item.MinimumBrightnessPercent ?? settings.MinimumBrightnessPercent,
+            MaximumBrightnessPercent: item.MaximumBrightnessPercent ?? settings.MaximumBrightnessPercent,
+            AllowSoftwareFallback: item.UseSoftwareFallback)).ToArray();
+    }
+
+    private static string StableLegacyId(string legacyId)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(legacyId.Trim().ToUpperInvariant()));
+        return $"display:{Convert.ToHexString(hash)[..24].ToLowerInvariant()}";
     }
 
     private void QuarantineCorruptFile(string path)
@@ -333,6 +377,7 @@ public sealed class JsonSettingsStore : ISettingsStore
     private enum SettingsDocumentKind
     {
         Envelope,
+        PreviousEnvelope,
         FlatLegacy,
         UnsupportedEnvelope,
         Malformed
