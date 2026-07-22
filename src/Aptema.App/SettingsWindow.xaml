@@ -1,0 +1,199 @@
+<Window x:Class="Aptema.App.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Aptema Settings"
+        Icon="Assets/Aptema.ico"
+        Width="430"
+        Height="610"
+        MinWidth="400"
+        MinHeight="560"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize">
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0">
+            <Image DockPanel.Dock="Left" Source="Assets/Aptema-48.png" Width="36" Height="36" />
+            <StackPanel Margin="10,0,0,0">
+                <TextBlock Text="Settings" FontSize="21" FontWeight="SemiBold" />
+                <TextBlock Text="Fine-tune only what you need" Foreground="{StaticResource MutedTextBrush}" />
+            </StackPanel>
+        </DockPanel>
+
+        <ScrollViewer Grid.Row="1" Margin="0,14,0,16" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <Border Padding="14"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{StaticResource BorderBrushMuted}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                    <StackPanel>
+                        <TextBlock Text="Everyday" FontWeight="SemiBold" />
+                        <CheckBox Margin="0,10,0,0"
+                                  Content="Open Aptema when Windows starts"
+                                  AutomationProperties.Name="Open Aptema when Windows starts"
+                                  IsChecked="{Binding StartWithWindows, Mode=TwoWay}" />
+
+                        <DockPanel Margin="0,14,0,4">
+                            <TextBlock DockPanel.Dock="Left"
+                                       Text="Comfort"
+                                       Foreground="{StaticResource MutedTextBrush}" />
+                            <TextBlock DockPanel.Dock="Right"
+                                       Text="{Binding ComfortIntensityText}"
+                                       FontWeight="SemiBold" />
+                        </DockPanel>
+                        <Slider Minimum="0"
+                                Maximum="100"
+                                TickFrequency="5"
+                                IsSnapToTickEnabled="True"
+                                AutomationProperties.Name="Comfort"
+                                Value="{Binding ComfortIntensity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <Grid Margin="0,16,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Start day" Foreground="{StaticResource MutedTextBrush}" />
+                                <TextBox Text="{Binding WakeTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Wind down" Foreground="{StaticResource MutedTextBrush}" />
+                                <TextBox Text="{Binding SleepTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Margin="0,12,0,0"
+                        Padding="14"
+                        Background="{DynamicResource SurfaceBrush}"
+                        BorderBrush="{StaticResource BorderBrushMuted}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                    <StackPanel>
+                        <TextBlock Text="Safety" FontWeight="SemiBold" />
+                        <TextBlock Margin="0,4,0,10"
+                                   Text="Keep automatic changes inside a comfortable range."
+                                   TextWrapping="Wrap"
+                                   Foreground="{StaticResource MutedTextBrush}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Minimum" Foreground="{StaticResource MutedTextBrush}" />
+                                <Slider Minimum="15"
+                                        Maximum="100"
+                                        TickFrequency="5"
+                                        IsSnapToTickEnabled="True"
+                                        AutomationProperties.Name="Minimum brightness"
+                                        Value="{Binding MinimumBrightnessPercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Text="{Binding MinimumBrightnessPercent, StringFormat={}{0}%}" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Maximum" Foreground="{StaticResource MutedTextBrush}" />
+                                <Slider Minimum="15"
+                                        Maximum="100"
+                                        TickFrequency="5"
+                                        IsSnapToTickEnabled="True"
+                                        AutomationProperties.Name="Maximum brightness"
+                                        Value="{Binding MaximumBrightnessPercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Text="{Binding MaximumBrightnessPercent, StringFormat={}{0}%}" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Expander Margin="0,12,0,0" Header="Advanced" IsExpanded="False">
+                    <StackPanel Margin="0,10,0,0">
+                        <Border Padding="14"
+                                Background="{DynamicResource SurfaceBrush}"
+                                BorderBrush="{StaticResource BorderBrushMuted}"
+                                BorderThickness="1"
+                                CornerRadius="8">
+                            <StackPanel>
+                                <TextBlock Text="Display control" FontWeight="SemiBold" />
+                                <CheckBox Margin="0,10,0,0"
+                                          Content="Use physical display brightness when available"
+                                          AutomationProperties.Name="Use physical display brightness when available"
+                                          IsChecked="{Binding EnableDdcCi, Mode=TwoWay}" />
+                                <CheckBox Content="Improve bright pages locally"
+                                          AutomationProperties.Name="Improve bright pages locally"
+                                          IsChecked="{Binding EnableContentBrightnessAnalysis, Mode=TwoWay}" />
+                                <CheckBox Content="Protect fullscreen games and videos"
+                                          AutomationProperties.Name="Protect fullscreen games and videos"
+                                          IsChecked="{Binding GamingVideoProtection, Mode=TwoWay}" />
+                                <CheckBox Content="Use lighter checks on battery"
+                                          AutomationProperties.Name="Use lighter checks on battery"
+                                          IsChecked="{Binding ReduceWorkOnBattery, Mode=TwoWay}" />
+
+                                <TextBlock Margin="0,16,0,4"
+                                           Text="Smooth changes"
+                                           Foreground="{StaticResource MutedTextBrush}" />
+                                <DockPanel>
+                                    <Slider DockPanel.Dock="Left"
+                                            Width="300"
+                                            Minimum="30"
+                                            Maximum="240"
+                                            TickFrequency="10"
+                                            IsSnapToTickEnabled="True"
+                                            Value="{Binding TransitionSpeedSeconds, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBlock DockPanel.Dock="Right"
+                                               Text="{Binding TransitionSpeedSeconds, StringFormat={}{0}s}"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center" />
+                                </DockPanel>
+
+                                <TextBlock Margin="0,16,0,4"
+                                           Text="App rules"
+                                           Foreground="{StaticResource MutedTextBrush}" />
+                                <TextBox MinHeight="78"
+                                         AcceptsReturn="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         TextWrapping="NoWrap"
+                                         AutomationProperties.Name="App rules"
+                                         Text="{Binding AppOverridesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="0,5,0,0"
+                                           Text="Example: chrome.exe=Development"
+                                           Foreground="{StaticResource MutedTextBrush}" />
+
+                                <TextBlock Margin="0,16,0,4"
+                                           Text="Display rules"
+                                           Foreground="{StaticResource MutedTextBrush}" />
+                                <TextBox MinHeight="78"
+                                         AcceptsReturn="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         TextWrapping="NoWrap"
+                                         AutomationProperties.Name="Display rules"
+                                         Text="{Binding MonitorPreferencesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Margin="0,5,0,0"
+                                           Text="Examples: device:\\.\DISPLAY1=off or device:\\.\DISPLAY1=offset:+5"
+                                           TextWrapping="Wrap"
+                                           Foreground="{StaticResource MutedTextBrush}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+        </ScrollViewer>
+
+        <DockPanel Grid.Row="2" LastChildFill="False">
+            <Button DockPanel.Dock="Left"
+                    Content="Reset"
+                    Command="{Binding ResetCommand}" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="Cancel" Width="86" Click="Cancel_Click" />
+                <Button Content="Save" Width="86" Margin="8,0,0,0" Click="Save_Click" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

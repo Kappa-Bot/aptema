@@ -3,79 +3,35 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/releases/latest" -Headers @{ "User-Agent" = "LightPilot-Updater" }
-$asset = $release.assets | Where-Object { $_.name -like "LightPilot-*-win-x64.zip" } | Select-Object -First 1
-if ($null -eq $asset) {
-    throw "No win-x64 ZIP asset found in latest release."
+$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/releases/latest" -Headers @{ "User-Agent" = "Aptema-Updater" }
+$asset = $release.assets | Where-Object { $_.name -like "Aptema-*-win-x64.zip" } | Select-Object -First 1
+$manifestAsset = $release.assets | Where-Object { $_.name -eq ($asset.name -replace '\.zip$', '.manifest.json') } | Select-Object -First 1
+if ($null -eq $asset -or $null -eq $manifestAsset) {
+    throw "Signed update package metadata is incomplete."
 }
 
-$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("LightPilotUpdate-" + [guid]::NewGuid().ToString("N"))
+$tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("AptemaUpdate-" + [guid]::NewGuid().ToString("N"))
 $zipPath = Join-Path $tempRoot $asset.name
-$extractPath = Join-Path $tempRoot "extract"
-$installDir = Join-Path $env:LOCALAPPDATA "LightPilot\App"
+$manifestPath = Join-Path $tempRoot $manifestAsset.name
+$installDir = Join-Path $env:LOCALAPPDATA "Aptema\App"
+$updater = Join-Path $env:LOCALAPPDATA "Aptema\Updater\Aptema.Updater.exe"
+if (-not (Test-Path -LiteralPath $updater)) { throw "Aptema updater is not installed." }
 
-function Stop-LightPilot {
-    $processes = @(Get-Process LightPilot.App -ErrorAction SilentlyContinue)
-    if ($processes.Count -eq 0) {
-        return
-    }
-
-    $ids = $processes | ForEach-Object { $_.Id }
-    $processes | Stop-Process -Force
-    foreach ($id in $ids) {
-        try {
-            Wait-Process -Id $id -Timeout 10 -ErrorAction SilentlyContinue
-        }
-        catch {
-        }
-    }
-
-    for ($attempt = 1; $attempt -le 20; $attempt++) {
-        if (-not (Get-Process LightPilot.App -ErrorAction SilentlyContinue)) {
-            return
-        }
-
-        Start-Sleep -Milliseconds 250
-    }
-
-    throw "LightPilot.App.exe did not exit cleanly."
-}
-
-function Copy-WithRetry {
-    param(
-        [string]$Source,
-        [string]$Destination
-    )
-
-    for ($attempt = 1; $attempt -le 5; $attempt++) {
-        try {
-            Copy-Item -Path $Source -Destination $Destination -Recurse -Force
-            return
-        }
-        catch {
-            if ($attempt -eq 5) {
-                throw
-            }
-
-            Start-Sleep -Milliseconds (300 * $attempt)
-        }
-    }
-}
-
-New-Item -ItemType Directory -Path $tempRoot, $extractPath -Force | Out-Null
+New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
 try {
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -Headers @{ "User-Agent" = "LightPilot-Updater" }
-    Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -Headers @{ "User-Agent" = "Aptema-Updater" }
+    Invoke-WebRequest -Uri $manifestAsset.browser_download_url -OutFile $manifestPath -Headers @{ "User-Agent" = "Aptema-Updater" }
+    Get-Process Aptema.App -ErrorAction SilentlyContinue | Stop-Process -Force
 
-    Stop-LightPilot
-    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-    Copy-WithRetry -Source (Join-Path $extractPath "*") -Destination $installDir
+    $update = Start-Process -FilePath $updater -ArgumentList @("--package", $zipPath, "--manifest", $manifestPath, "--install-dir", $installDir) -WindowStyle Hidden -Wait -PassThru
+    if ($update.ExitCode -ne 0) { throw "Update failed safely. Exit code: $($update.ExitCode)." }
 
-    $exe = Join-Path $installDir "LightPilot.App.exe"
+    $exe = Join-Path $installDir "Aptema.App.exe"
     $runCommand = '"' + $exe + '" --background'
-    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "LightPilot" -Value $runCommand
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Aptema" -Value $runCommand
+    Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "LightPilot" -ErrorAction SilentlyContinue
     Start-Process -FilePath $exe -ArgumentList "--background" -WindowStyle Hidden
-    Write-Host "Updated Light Pilot to $($release.tag_name)"
+    Write-Host "Updated Aptema to $($release.tag_name)"
 }
 finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\src\LightPilot.App\Assets')
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\src\Aptema.App\Assets')
 )
 
 $ErrorActionPreference = 'Stop'

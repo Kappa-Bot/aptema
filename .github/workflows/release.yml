@@ -17,9 +17,9 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - name: Build
-        run: dotnet build LightPilot.sln
+        run: dotnet build Aptema.sln
       - name: Test
-        run: dotnet test LightPilot.sln --no-build
+        run: dotnet test Aptema.sln --no-build
       - name: Install Inno Setup
         run: choco install innosetup -y
       - name: Package
@@ -36,7 +36,7 @@ jobs:
           $notes = "docs\RELEASE_NOTES_$tag.md"
           $assets = Get-ChildItem artifacts -File | Where-Object { $_.Name -match '\.(zip|exe)$' } | ForEach-Object { $_.FullName }
           if (Test-Path $notes) {
-            gh release create $tag $assets --title "Light Pilot $tag" --notes-file $notes
+            gh release create $tag $assets --title "Aptema $tag" --notes-file $notes
           } else {
-            gh release create $tag $assets --title "Light Pilot $tag" --generate-notes
+            gh release create $tag $assets --title "Aptema $tag" --generate-notes
           }

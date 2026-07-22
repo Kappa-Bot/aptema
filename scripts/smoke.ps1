@@ -3,25 +3,25 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 
 Push-Location $repoRoot
 try {
-    dotnet build LightPilot.sln
-    dotnet test LightPilot.sln
+    dotnet build Aptema.sln
+    dotnet test Aptema.sln
 
-    $installDir = Join-Path $env:LOCALAPPDATA "LightPilot\App"
-    $exe = Join-Path $installDir "LightPilot.App.exe"
+    $installDir = Join-Path $env:LOCALAPPDATA "Aptema\App"
+    $exe = Join-Path $installDir "Aptema.App.exe"
     if (-not (Test-Path -LiteralPath $exe)) {
         throw "Installed app not found: $exe"
     }
 
-    $before = @(Get-Process LightPilot.App -ErrorAction SilentlyContinue).Count
+    $before = @(Get-Process Aptema.App -ErrorAction SilentlyContinue).Count
     Start-Process -FilePath $exe -ArgumentList "--background" -WindowStyle Hidden
     Start-Sleep -Seconds 2
-    $after = @(Get-Process LightPilot.App -ErrorAction SilentlyContinue).Count
+    $after = @(Get-Process Aptema.App -ErrorAction SilentlyContinue).Count
     if ($after -ne 1) {
         throw "Single-instance smoke failed. Before=$before After=$after"
     }
 
-    $startup = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "LightPilot" -ErrorAction Stop
-    if ($startup.LightPilot -notlike '*--background*') {
+    $startup = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Aptema" -ErrorAction Stop
+    if ($startup.Aptema -notlike '*--background*') {
         throw "Startup command missing --background"
     }
 
